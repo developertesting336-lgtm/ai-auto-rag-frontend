@@ -1,6 +1,14 @@
+'use client';
+
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
 export default function Footer() {
+  const [year, setYear] = useState('2026');
+
+  useEffect(() => {
+    setYear(new Date().getFullYear().toString());
+  }, []);
   return (
     <footer className="border-t border-zinc-800/80 bg-zinc-950 text-zinc-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -64,7 +72,7 @@ export default function Footer() {
         </div>
 
         <div className="pt-6 border-t border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 gap-4 font-mono">
-          <p>© {new Date().getFullYear()} AutoFlow AI Platforms Inc. All rights reserved.</p>
+          <p>© {year} AutoFlow AI Platforms Inc. All rights reserved.</p>
           <div className="flex items-center gap-3 text-[11px]">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />

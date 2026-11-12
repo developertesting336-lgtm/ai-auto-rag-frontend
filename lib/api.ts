@@ -1,4 +1,12 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { BACKEND_URL } from '../config';
+
+export const API_BASE = (
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  BACKEND_URL ||
+  process.env.BACKEND_URL ||
+  'https://ai-auto-rag-backend.vercel.app'
+).replace(/\/+$/, '');
 
 export interface User {
   id: string;
