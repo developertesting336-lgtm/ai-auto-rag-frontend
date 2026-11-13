@@ -77,10 +77,28 @@ export interface UnipileSettings {
   id?: string;
   provider: string;
   api_key_masked?: string;
+  webhook_token?: string;
   webhook_url?: string;
   account_id?: string;
+  ai_prompt?: string;
   is_active: boolean;
   updated_at?: string;
+}
+
+export interface InboundEmailItem {
+  id: string;
+  user_id: string;
+  account_id?: string;
+  message_id?: string;
+  from_email: string;
+  from_name?: string;
+  to_email?: string;
+  subject: string;
+  snippet?: string;
+  body?: string;
+  reply_status: string;
+  reply_text?: string;
+  created_at: string;
 }
 
 /**
@@ -579,7 +597,7 @@ export async function getUnipileSettings(token: string): Promise<{
 }
 
 export async function saveUnipileSettings(
-  data: { api_key: string; webhook_url?: string; account_id?: string },
+  data: { api_key?: string; webhook_url?: string; account_id?: string; ai_prompt?: string },
   token: string
 ): Promise<{ success: boolean; settings?: UnipileSettings; message?: string; error?: string }> {
   try {
@@ -590,6 +608,40 @@ export async function saveUnipileSettings(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function saveEmailPrompt(
+  prompt: string,
+  token: string
+): Promise<{ success: boolean; ai_prompt?: string; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/email/prompt`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ prompt }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function fetchInboundEmails(token: string): Promise<{
+  success: boolean;
+  emails?: InboundEmailItem[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE}/api/email/inbound`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
     return await res.json();
   } catch (err: any) {

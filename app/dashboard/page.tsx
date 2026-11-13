@@ -27,11 +27,14 @@ import {
   queryChatbot,
   getUnipileSettings,
   saveUnipileSettings,
+  saveEmailPrompt,
+  fetchInboundEmails,
   User,
   Company,
   CompanyPolicy,
   ChatbotApiKeyItem,
   UnipileSettings,
+  InboundEmailItem,
   ApiKeyItem,
   API_BASE,
 } from '../../lib/api';
@@ -361,10 +364,14 @@ export default function DashboardPage() {
   const [unipileApiKey, setUnipileApiKey] = useState('');
   const [unipileWebhookUrl, setUnipileWebhookUrl] = useState('');
   const [unipileAccountId, setUnipileAccountId] = useState('');
+  const [unipileAiPrompt, setUnipileAiPrompt] = useState('');
   const [unipileSaving, setUnipileSaving] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
   const [unipileFeedback, setUnipileFeedback] = useState<{ text: string; error?: boolean } | null>(null);
+  const [promptFeedback, setPromptFeedback] = useState<{ text: string; error?: boolean } | null>(null);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [inboundEmails, setInboundEmails] = useState<InboundEmailItem[]>([]);
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
@@ -372,6 +379,10 @@ export default function DashboardPage() {
   const [keyName, setKeyName] = useState('');
   const [keyValue, setKeyValue] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+
+  // Derived user API key status (Strictly requiring user-provided key)
+  const hasGeminiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini');
+  const hasUserAiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini' || k.provider?.toLowerCase() === 'openai');
 
   // AI Playground state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -537,6 +548,11 @@ export default function DashboardPage() {
       setUnipileSettings(res.settings);
       setUnipileWebhookUrl(res.settings.webhook_url || '');
       setUnipileAccountId(res.settings.account_id || '');
+      setUnipileAiPrompt(res.settings.ai_prompt || '');
+    }
+    const emailsRes = await fetchInboundEmails(authToken);
+    if (emailsRes.success && emailsRes.emails) {
+      setInboundEmails(emailsRes.emails);
     }
   };
 
@@ -544,6 +560,15 @@ export default function DashboardPage() {
     const res = await fetchApiKeys(authToken);
     if (res.success && res.data) {
       setApiKeys(res.data);
+      const hasAi = res.data.some((k: ApiKeyItem) => k.provider?.toLowerCase() === 'gemini' || k.provider?.toLowerCase() === 'openai');
+      if (!hasAi) {
+        setChatMessages([
+          {
+            role: 'assistant',
+            text: '⚠️ Action Required: Please provide your Google Gemini API key in the "API Keys" tab before testing or embedding your chatbot script.',
+          },
+        ]);
+      }
     }
   };
 
@@ -693,6 +718,17 @@ export default function DashboardPage() {
 
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!hasUserAiKey) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: '⚠️ Google Gemini API key required: Please provide your Gemini API key in the "API Keys" tab before testing or querying this chatbot.',
+        },
+      ]);
+      return;
+    }
+
     const activeKey = selectedEmbedKey || company?.api_key;
     if (!chatInput.trim() || !activeKey || chatLoading) return;
 
@@ -738,25 +774,35 @@ export default function DashboardPage() {
 
   const handleSaveUnipile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !unipileApiKey.trim()) return;
+    if (!token) return;
+    if (!unipileApiKey.trim() && !unipileSettings?.api_key_masked) {
+      setUnipileFeedback({ text: 'Please enter your Unipile API key.', error: true });
+      return;
+    }
 
     setUnipileSaving(true);
     setUnipileFeedback(null);
 
     try {
-      const res = await saveUnipileSettings(
-        {
-          api_key: unipileApiKey.trim(),
-          webhook_url: unipileWebhookUrl.trim(),
-          account_id: unipileAccountId.trim(),
-        },
-        token
-      );
+      const payload: { api_key?: string; webhook_url?: string; account_id?: string; ai_prompt?: string } = {
+        webhook_url: unipileWebhookUrl.trim(),
+        account_id: unipileAccountId.trim(),
+        ai_prompt: unipileAiPrompt.trim(),
+      };
+      if (unipileApiKey.trim()) {
+        payload.api_key = unipileApiKey.trim();
+      }
+
+      const res = await saveUnipileSettings(payload, token);
 
       if (res.success && res.settings) {
         setUnipileSettings(res.settings);
         setUnipileApiKey('');
-        setUnipileFeedback({ text: 'Unipile integration configuration stored securely in database.' });
+        if (res.settings.ai_prompt !== undefined) {
+          setUnipileAiPrompt(res.settings.ai_prompt);
+        }
+        setUnipileFeedback({ text: 'Unipile configuration updated successfully.' });
+        setTimeout(() => setUnipileFeedback(null), 3500);
       } else {
         setUnipileFeedback({ text: res.error || 'Failed to save settings.', error: true });
       }
@@ -765,8 +811,28 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSaveEmailPrompt = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!token) return;
+
+    setSavingPrompt(true);
+    setPromptFeedback(null);
+
+    try {
+      const res = await saveEmailPrompt(unipileAiPrompt.trim(), token);
+      if (res.success) {
+        setPromptFeedback({ text: 'AI email rules and instructions saved successfully!' });
+        setTimeout(() => setPromptFeedback(null), 3500);
+      } else {
+        setPromptFeedback({ text: res.error || 'Failed to save prompt instructions.', error: true });
+      }
+    } finally {
+      setSavingPrompt(false);
+    }
+  };
+
   const copyInboundWebhookUrl = () => {
-    const url = `${API_BASE}/api/email/webhook`;
+    const url = unipileSettings?.webhook_url || `${API_BASE}/api/email/webhook`;
     navigator.clipboard.writeText(url);
     setCopiedWebhook(true);
     setTimeout(() => setCopiedWebhook(false), 2000);
@@ -790,6 +856,12 @@ export default function DashboardPage() {
         setKeyName('');
         setKeyValue('');
         loadApiKeys(token);
+        setChatMessages([
+          {
+            role: 'assistant',
+            text: `Hello! I am your AI company assistant. I read your uploaded policy documents from Pinecone and answer customer queries based on them. Ask me anything!`,
+          },
+        ]);
       } else {
         alert(res.error || 'Failed to save API key');
       }
@@ -901,9 +973,8 @@ export default function DashboardPage() {
           MINIMALIST SIDEBAR (COMPACT, PROFESSIONAL 240px)
       ========================================================================= */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-60 bg-zinc-900/90 backdrop-blur-xl border-r border-zinc-800/80 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-60 bg-zinc-900/90 backdrop-blur-xl border-r border-zinc-800/80 flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex flex-col">
           {/* Brand header */}
@@ -942,11 +1013,10 @@ export default function DashboardPage() {
                 setCurrentSection('overview');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${
-                currentSection === 'overview'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${currentSection === 'overview'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="w-4 h-4 shrink-0 flex items-center justify-center">
                 <IconOverview className={currentSection === 'overview' ? 'text-zinc-100' : 'text-zinc-400'} />
@@ -959,11 +1029,10 @@ export default function DashboardPage() {
                 setCurrentSection('company');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${
-                currentSection === 'company'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'company'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-4 h-4 shrink-0 flex items-center justify-center">
@@ -979,11 +1048,10 @@ export default function DashboardPage() {
                 setCurrentSection('chatbot');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${
-                currentSection === 'chatbot'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'chatbot'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-4 h-4 shrink-0 flex items-center justify-center">
@@ -999,11 +1067,10 @@ export default function DashboardPage() {
                 setCurrentSection('email');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${
-                currentSection === 'email'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'email'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-4 h-4 shrink-0 flex items-center justify-center">
@@ -1025,11 +1092,10 @@ export default function DashboardPage() {
                 setCurrentSection('playground');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${
-                currentSection === 'playground'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${currentSection === 'playground'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="w-4 h-4 shrink-0 flex items-center justify-center">
                 <IconSparkles className={currentSection === 'playground' ? 'text-zinc-100' : 'text-zinc-400'} />
@@ -1042,11 +1108,10 @@ export default function DashboardPage() {
                 setCurrentSection('apikeys');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${
-                currentSection === 'apikeys'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'apikeys'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-4 h-4 shrink-0 flex items-center justify-center">
@@ -1064,11 +1129,10 @@ export default function DashboardPage() {
                 setCurrentSection('settings');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${
-                currentSection === 'settings'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${currentSection === 'settings'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+                }`}
             >
               <div className="w-4 h-4 shrink-0 flex items-center justify-center">
                 <IconSettings className={currentSection === 'settings' ? 'text-zinc-100' : 'text-zinc-400'} />
@@ -1155,11 +1219,10 @@ export default function DashboardPage() {
                         <button
                           key={comp.id}
                           onClick={() => handleSelectCompany(comp)}
-                          className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                            company?.id === comp.id
+                          className={`w-full px-2.5 py-2 rounded-lg text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${company?.id === comp.id
                               ? 'bg-zinc-800 text-white'
                               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                          }`}
+                            }`}
                         >
                           <div className="truncate">
                             <div className="font-medium truncate">{comp.name}</div>
@@ -1279,9 +1342,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span
-                      className={`w-2 h-2 rounded-full ${
-                        unipileSettings?.is_active ? 'bg-emerald-400' : 'bg-zinc-600'
-                      }`}
+                      className={`w-2 h-2 rounded-full ${unipileSettings?.is_active ? 'bg-emerald-400' : 'bg-zinc-600'
+                        }`}
                     />
                     <span className="text-sm font-semibold text-zinc-100">
                       {unipileSettings?.is_active ? 'Active' : 'Unconfigured'}
@@ -1353,8 +1415,14 @@ export default function DashboardPage() {
                       <span className="text-zinc-200">{unipileSettings?.api_key_masked || 'Not saved yet'}</span>
                     </div>
                     <div className="flex items-center justify-between text-zinc-400">
+                      <span className="text-zinc-500">AI Prompt Rules</span>
+                      <span className={unipileAiPrompt ? 'text-emerald-400' : 'text-zinc-400'}>
+                        {unipileAiPrompt ? 'Configured' : 'Default'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-zinc-400">
                       <span className="text-zinc-500">Inbound Endpoint</span>
-                      <span className="text-zinc-200 truncate max-w-[200px]">/api/email/webhook</span>
+                      <span className="text-zinc-200 truncate max-w-[200px]">/api/email/webhook/:token</span>
                     </div>
                   </div>
                 </div>
@@ -1370,11 +1438,10 @@ export default function DashboardPage() {
               {/* Alert Feedback */}
               {companyFeedback && (
                 <div
-                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${
-                    companyFeedback.error
+                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${companyFeedback.error
                       ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                       : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                  }`}
+                    }`}
                 >
                   <span>{companyFeedback.text}</span>
                   <button onClick={() => setCompanyFeedback(null)} className="hover:text-white">✕</button>
@@ -1410,11 +1477,10 @@ export default function DashboardPage() {
                     <button
                       key={c.id}
                       onClick={() => handleSelectCompany(c)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 flex items-center gap-2 cursor-pointer ${
-                        company?.id === c.id
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 flex items-center gap-2 cursor-pointer ${company?.id === c.id
                           ? 'bg-zinc-800 text-white border border-zinc-700 shadow-xs'
                           : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200 border border-zinc-800/80 hover:border-zinc-700'
-                      }`}
+                        }`}
                     >
                       <IconBuilding className="w-3.5 h-3.5" />
                       <span>{c.name}</span>
@@ -1435,8 +1501,8 @@ export default function DashboardPage() {
                         {isCreatingNewCompany
                           ? 'Register New Company'
                           : company
-                          ? 'Edit Company Profile'
-                          : 'Register First Company'}
+                            ? 'Edit Company Profile'
+                            : 'Register First Company'}
                       </h2>
                       <p className="text-xs text-zinc-400 mt-0.5">
                         {isCreatingNewCompany
@@ -1522,10 +1588,10 @@ export default function DashboardPage() {
                         {companyLoading
                           ? 'Saving...'
                           : isCreatingNewCompany
-                          ? 'Create Company'
-                          : company
-                          ? 'Update Company'
-                          : 'Save Company Profile'}
+                            ? 'Create Company'
+                            : company
+                              ? 'Update Company'
+                              : 'Save Company Profile'}
                       </button>
                       {(isEditingCompany || (isCreatingNewCompany && companiesList.length > 0)) && (
                         <button
@@ -1611,13 +1677,28 @@ export default function DashboardPage() {
 
                       {policyFeedback && (
                         <div
-                          className={`p-3 rounded-md text-xs font-mono ${
-                            policyFeedback.error
+                          className={`p-3 rounded-md text-xs font-mono ${policyFeedback.error
                               ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                               : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                          }`}
+                            }`}
                         >
                           {policyFeedback.text}
+                        </div>
+                      )}
+
+                      {!hasUserAiKey && (
+                        <div className="p-3 rounded-md bg-amber-950/30 border border-amber-800/60 text-xs text-amber-200 flex items-center justify-between gap-2">
+                          <span>⚠️ Add your Google Gemini API key in &ldquo;API Keys&rdquo; to enable Pinecone vectorization.</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKeyProvider('gemini');
+                              setCurrentSection('apikeys');
+                            }}
+                            className="text-[11px] font-semibold text-amber-300 underline hover:text-amber-100 shrink-0 cursor-pointer"
+                          >
+                            Add Key →
+                          </button>
                         </div>
                       )}
 
@@ -1718,11 +1799,10 @@ export default function DashboardPage() {
                                   <div className="font-medium text-zinc-100 flex items-center gap-2 truncate">
                                     <span className="truncate">{p.title}</span>
                                     <span
-                                      className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded border shrink-0 ${
-                                        p.status === 'indexed'
+                                      className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded border shrink-0 ${p.status === 'indexed'
                                           ? 'border-emerald-800/60 text-emerald-400 bg-emerald-950/20'
                                           : 'border-zinc-700 text-zinc-400 bg-zinc-800/50'
-                                      }`}
+                                        }`}
                                     >
                                       {p.status}
                                     </span>
@@ -1818,322 +1898,371 @@ export default function DashboardPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Left Column: API Key Manager & Script Embed */}
-                  <div className="space-y-5">
-                    {/* Alert Feedback */}
-                    {chatbotKeyFeedback && (
-                      <div
-                        className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${
-                          chatbotKeyFeedback.error
-                            ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
-                            : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                        }`}
+                <>
+                  {/* Google Gemini API Key Warning Banner if missing */}
+                  {!hasUserAiKey && (
+                    <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 mt-0.5">
+                          <IconKey className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-amber-200">Google Gemini API Key Required Before Implementation</h4>
+                          <p className="text-zinc-300 mt-0.5 leading-relaxed">
+                            You must provide your Google Gemini API key before you can generate chatbot keys, test responses, or implement the chatbot embed script on your website.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setKeyProvider('gemini');
+                          setCurrentSection('apikeys');
+                        }}
+                        className="px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
                       >
-                        <span>{chatbotKeyFeedback.text}</span>
-                        <button onClick={() => setChatbotKeyFeedback(null)} className="hover:text-white">✕</button>
-                      </div>
-                    )}
+                        Provide Gemini Key Now →
+                      </button>
+                    </div>
+                  )}
 
-                    {/* Generate Key Form Card */}
-                    <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                          Generate Chatbot API Key
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-400">Website Integration</span>
-                      </div>
-                      <p className="text-xs text-zinc-400 leading-relaxed">
-                        Generate unique API keys to embed your company AI chatbot on external websites, customer portals, or landing pages.
-                      </p>
-
-                      <form onSubmit={handleCreateChatbotKey} className="flex gap-2 pt-1">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Key label e.g. Production Website"
-                          value={newChatbotKeyName}
-                          onChange={(e) => setNewChatbotKeyName(e.target.value)}
-                          className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-sans text-xs"
-                        />
-                        <button
-                          type="submit"
-                          disabled={creatingChatbotKey || !newChatbotKeyName.trim()}
-                          className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left Column: API Key Manager & Script Embed */}
+                    <div className="space-y-5">
+                      {/* Alert Feedback */}
+                      {chatbotKeyFeedback && (
+                        <div
+                          className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${chatbotKeyFeedback.error
+                              ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
+                              : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
+                            }`}
                         >
-                          {creatingChatbotKey ? 'Generating...' : '+ Generate Key'}
-                        </button>
-                      </form>
-                    </div>
+                          <span>{chatbotKeyFeedback.text}</span>
+                          <button onClick={() => setChatbotKeyFeedback(null)} className="hover:text-white">✕</button>
+                        </div>
+                      )}
 
-                    {/* Active API Keys List Card */}
-                    <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                          Active Chatbot Keys ({1 + chatbotKeys.length})
-                        </span>
-                        <span className="text-[10px] font-mono text-zinc-500">Live Auth</span>
-                      </div>
+                      {/* Generate Key Form Card */}
+                      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                            Generate Chatbot API Key
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400">Website Integration</span>
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          Generate unique API keys to embed your company AI chatbot on external websites, customer portals, or landing pages.
+                        </p>
 
-                      <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
-                        {/* Primary Company Default Key */}
-                        {company.api_key && (
-                          <div
-                            className={`p-3 rounded-lg border text-xs transition-all ${
-                              selectedEmbedKey === company.api_key
-                                ? 'bg-zinc-900 border-zinc-600'
-                                : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
-                            }`}
+                        <form onSubmit={handleCreateChatbotKey} className="flex gap-2 pt-1">
+                          <input
+                            type="text"
+                            required
+                            disabled={!hasUserAiKey}
+                            placeholder={hasUserAiKey ? "Key label e.g. Production Website" : "Configure Gemini key in API Keys tab first"}
+                            value={newChatbotKeyName}
+                            onChange={(e) => setNewChatbotKeyName(e.target.value)}
+                            className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-sans text-xs disabled:opacity-50"
+                          />
+                          <button
+                            type="submit"
+                            disabled={creatingChatbotKey || !newChatbotKeyName.trim() || !hasUserAiKey}
+                            className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 shrink-0 flex items-center gap-1.5 cursor-pointer"
                           >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-zinc-200">Default Primary Key</span>
-                                <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">
-                                  Default
-                                </span>
-                              </div>
-                              <button
-                                onClick={handleRegenerateCompanyKey}
-                                disabled={regeneratingKey}
-                                className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 underline"
-                              >
-                                {regeneratingKey ? 'Rotating...' : 'Rotate'}
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-2 font-mono text-[11px]">
-                              <span className="text-zinc-300 flex-1 truncate select-all">
-                                {company.api_key}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(company.api_key!);
-                                  setCopiedCompanyKey(true);
-                                  setTimeout(() => setCopiedCompanyKey(false), 2000);
-                                }}
-                                className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
-                              >
-                                {copiedCompanyKey ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
-                                <span>{copiedCompanyKey ? 'Copied' : 'Copy'}</span>
-                              </button>
-                              <button
-                                onClick={() => setSelectedEmbedKey(company.api_key!)}
-                                className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${
-                                  selectedEmbedKey === company.api_key
-                                    ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
-                                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
-                                }`}
-                              >
-                                {selectedEmbedKey === company.api_key ? 'Selected' : 'Use in Embed'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Generated Keys */}
-                        {chatbotKeys.map((k) => (
-                          <div
-                            key={k.id}
-                            className={`p-3 rounded-lg border text-xs transition-all ${
-                              selectedEmbedKey === k.api_key
-                                ? 'bg-zinc-900 border-zinc-600'
-                                : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-2 truncate">
-                                <span className="font-medium text-zinc-200 truncate">{k.name}</span>
-                                <span className="text-[9px] font-mono text-zinc-500 shrink-0">
-                                  {new Date(k.created_at).toLocaleDateString()}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteChatbotKey(k.id)}
-                                className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors"
-                              >
-                                Revoke
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-2 font-mono text-[11px]">
-                              <span className="text-zinc-300 flex-1 truncate select-all">
-                                {k.api_key}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(k.api_key);
-                                  alert(`Copied key for "${k.name}"`);
-                                }}
-                                className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
-                              >
-                                <IconCopy />
-                                <span>Copy</span>
-                              </button>
-                              <button
-                                onClick={() => setSelectedEmbedKey(k.api_key)}
-                                className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${
-                                  selectedEmbedKey === k.api_key
-                                    ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
-                                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
-                                }`}
-                              >
-                                {selectedEmbedKey === k.api_key ? 'Selected' : 'Use in Embed'}
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                            {creatingChatbotKey ? 'Generating...' : '+ Generate Key'}
+                          </button>
+                        </form>
                       </div>
-                    </div>
 
-                    {/* Plug-and-Play Script Tag Embed */}
-                    <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                          1-Line HTML Embed Code
-                        </span>
-                        <span className="text-[10px] font-mono text-indigo-400">Plug & Play</span>
+                      {/* Active API Keys List Card */}
+                      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                            Active Chatbot Keys ({1 + chatbotKeys.length})
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-500">Live Auth</span>
+                        </div>
+
+                        <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                          {/* Primary Company Default Key */}
+                          {company.api_key && (
+                            <div
+                              className={`p-3 rounded-lg border text-xs transition-all ${selectedEmbedKey === company.api_key
+                                  ? 'bg-zinc-900 border-zinc-600'
+                                  : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
+                                }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-zinc-200">Default Primary Key</span>
+                                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">
+                                    Default
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={handleRegenerateCompanyKey}
+                                  disabled={regeneratingKey}
+                                  className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 underline"
+                                >
+                                  {regeneratingKey ? 'Rotating...' : 'Rotate'}
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2 font-mono text-[11px]">
+                                <span className="text-zinc-300 flex-1 truncate select-all">
+                                  {company.api_key}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(company.api_key!);
+                                    setCopiedCompanyKey(true);
+                                    setTimeout(() => setCopiedCompanyKey(false), 2000);
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
+                                >
+                                  {copiedCompanyKey ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
+                                  <span>{copiedCompanyKey ? 'Copied' : 'Copy'}</span>
+                                </button>
+                                <button
+                                  onClick={() => setSelectedEmbedKey(company.api_key!)}
+                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${selectedEmbedKey === company.api_key
+                                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
+                                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
+                                    }`}
+                                >
+                                  {selectedEmbedKey === company.api_key ? 'Selected' : 'Use in Embed'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Generated Keys */}
+                          {chatbotKeys.map((k) => (
+                            <div
+                              key={k.id}
+                              className={`p-3 rounded-lg border text-xs transition-all ${selectedEmbedKey === k.api_key
+                                  ? 'bg-zinc-900 border-zinc-600'
+                                  : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
+                                }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2 truncate">
+                                  <span className="font-medium text-zinc-200 truncate">{k.name}</span>
+                                  <span className="text-[9px] font-mono text-zinc-500 shrink-0">
+                                    {new Date(k.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteChatbotKey(k.id)}
+                                  className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors"
+                                >
+                                  Revoke
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2 font-mono text-[11px]">
+                                <span className="text-zinc-300 flex-1 truncate select-all">
+                                  {k.api_key}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(k.api_key);
+                                    alert(`Copied key for "${k.name}"`);
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
+                                >
+                                  <IconCopy />
+                                  <span>Copy</span>
+                                </button>
+                                <button
+                                  onClick={() => setSelectedEmbedKey(k.api_key)}
+                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${selectedEmbedKey === k.api_key
+                                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
+                                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
+                                    }`}
+                                >
+                                  {selectedEmbedKey === k.api_key ? 'Selected' : 'Use in Embed'}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <p className="text-xs text-zinc-400 leading-relaxed">
-                        Paste this single tag right before the closing &lt;/body&gt; tag of your website. A floating AI chat bubble will immediately appear.
-                      </p>
 
-                      <div className="relative bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-xs">
-                        <pre className="text-zinc-300 text-[11px] whitespace-pre-wrap break-all selection:bg-zinc-800">
-{`<script
+                      {/* Plug-and-Play Script Tag Embed */}
+                      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                            1-Line HTML Embed Code
+                          </span>
+                          {hasUserAiKey ? (
+                            <span className="text-[10px] font-mono text-indigo-400">Plug & Play</span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-amber-400 font-semibold">🔒 Key Required</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          Paste this single tag right before the closing &lt;/body&gt; tag of your website. A floating AI chat bubble will immediately appear.
+                        </p>
+
+                        {!hasUserAiKey ? (
+                          <div className="p-4 rounded-lg bg-zinc-950 border border-amber-900/60 space-y-3">
+                            <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
+                              <span className="text-amber-400">⚠️</span>
+                              <span>Google Gemini API Key Required Before Script Implementation</span>
+                            </div>
+                            <p className="text-zinc-400 text-xs leading-relaxed">
+                              Please provide your Google Gemini API key in the &ldquo;API Keys&rdquo; tab before you can implement or embed this chatbot script. The script requires your authenticated API key to query Pinecone and generate AI responses.
+                            </p>
+                            <button
+                              onClick={() => {
+                                setKeyProvider('gemini');
+                                setCurrentSection('apikeys');
+                              }}
+                              className="w-full py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                            >
+                              <IconKey className="w-3.5 h-3.5" />
+                              <span>Add Google Gemini Key to Unlock Script</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-xs">
+                            <pre className="text-zinc-300 text-[11px] whitespace-pre-wrap break-all selection:bg-zinc-800">
+                              {`<script
   src="${API_BASE}/embed/chatbot.js"
   data-api-key="${selectedEmbedKey || company.api_key || 'YOUR_API_KEY'}"
 ></script>`}
-                        </pre>
-                        <button
-                          onClick={() => {
-                            const activeKey = selectedEmbedKey || company.api_key || 'YOUR_API_KEY';
-                            const code = `<script src="${API_BASE}/embed/chatbot.js" data-api-key="${activeKey}"></script>`;
-                            navigator.clipboard.writeText(code);
-                            setCopiedEmbedScript(true);
-                            setTimeout(() => setCopiedEmbedScript(false), 2000);
-                          }}
-                          className="mt-3 w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                        >
-                          {copiedEmbedScript ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
-                          <span>{copiedEmbedScript ? 'Copied Embed Tag' : 'Copy Embed Code'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* REST API Call Example */}
-                    <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                        Direct REST API Endpoint
-                      </span>
-                      <p className="text-xs text-zinc-400">
-                        Query the chatbot programmatically from any frontend, backend, or mobile app:
-                      </p>
-                      <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-[11px] text-zinc-400 space-y-1">
-                        <div><span className="text-emerald-400">POST</span> {API_BASE}/api/chatbot/query</div>
-                        <div><span className="text-zinc-500">Header:</span> x-api-key: {selectedEmbedKey || company.api_key || 'af_live_...'}</div>
-                        <div><span className="text-zinc-500">Body:</span> &#123; &quot;message&quot;: &quot;What is your return policy?&quot; &#125;</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Live Interactive Chatbot Tester */}
-                  <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex flex-col justify-between h-[580px]">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-                      <div className="min-w-0 pr-2">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">
-                            Live Chatbot Tester
-                          </h3>
-                        </div>
-                        {companiesList.length > 1 ? (
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[11px] text-zinc-500 font-mono">Chatbot:</span>
-                            <select
-                              value={company.id}
-                              onChange={(e) => {
-                                const found = companiesList.find((c) => c.id === e.target.value);
-                                if (found) handleSelectCompany(found);
+                            </pre>
+                            <button
+                              onClick={() => {
+                                const activeKey = selectedEmbedKey || company.api_key || 'YOUR_API_KEY';
+                                const code = `<script src="${API_BASE}/embed/chatbot.js" data-api-key="${activeKey}"></script>`;
+                                navigator.clipboard.writeText(code);
+                                setCopiedEmbedScript(true);
+                                setTimeout(() => setCopiedEmbedScript(false), 2000);
                               }}
-                              className="bg-zinc-950 border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-200 font-medium focus:outline-none cursor-pointer"
+                              className="mt-3 w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                             >
-                              {companiesList.map((c) => (
-                                <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
-                                  {c.name}
-                                </option>
-                              ))}
-                            </select>
+                              {copiedEmbedScript ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
+                              <span>{copiedEmbedScript ? 'Copied Embed Tag' : 'Copy Embed Code'}</span>
+                            </button>
                           </div>
-                        ) : (
-                          <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
-                            Testing Pinecone vector retrieval for {company.name}
-                          </p>
                         )}
                       </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0">
-                        {policies.length} Policies
-                      </span>
+
+                      {/* REST API Call Example */}
+                      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                          Direct REST API Endpoint
+                        </span>
+                        <p className="text-xs text-zinc-400">
+                          Query the chatbot programmatically from any frontend, backend, or mobile app:
+                        </p>
+                        <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-[11px] text-zinc-400 space-y-1">
+                          <div><span className="text-emerald-400">POST</span> {API_BASE}/api/chatbot/query</div>
+                          <div><span className="text-zinc-500">Header:</span> x-api-key: {selectedEmbedKey || company.api_key || 'af_live_...'}</div>
+                          <div><span className="text-zinc-500">Body:</span> &#123; &quot;message&quot;: &quot;What is your return policy?&quot; &#125;</div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Chat Messages Log */}
-                    <div className="flex-1 overflow-y-auto py-3 space-y-3 font-sans text-xs">
-                      {chatMessages.map((msg, i) => (
-                        <div
-                          key={i}
-                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-[85%] rounded-lg p-3 leading-relaxed ${
-                              msg.role === 'user'
-                                ? 'bg-zinc-800 text-zinc-100'
-                                : 'bg-zinc-950 border border-zinc-800 text-zinc-300'
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap">{msg.text}</p>
-                            {msg.sources && msg.sources.length > 0 && (
-                              <div className="mt-2 pt-2 border-t border-zinc-800/80 text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 flex-wrap">
-                                <span>Sources:</span>
-                                {msg.sources.map((s, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400"
-                                  >
-                                    {s.title || s.file_name}
-                                  </span>
+                    {/* Right Column: Live Interactive Chatbot Tester */}
+                    <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex flex-col justify-between h-[580px]">
+                      <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                        <div className="min-w-0 pr-2">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">
+                              Live Chatbot Tester
+                            </h3>
+                          </div>
+                          {companiesList.length > 1 ? (
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[11px] text-zinc-500 font-mono">Chatbot:</span>
+                              <select
+                                value={company.id}
+                                onChange={(e) => {
+                                  const found = companiesList.find((c) => c.id === e.target.value);
+                                  if (found) handleSelectCompany(found);
+                                }}
+                                className="bg-zinc-950 border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-200 font-medium focus:outline-none cursor-pointer"
+                              >
+                                {companiesList.map((c) => (
+                                  <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
+                                    {c.name}
+                                  </option>
                                 ))}
-                              </div>
-                            )}
-                          </div>
+                              </select>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
+                              Testing Pinecone vector retrieval for {company.name}
+                            </p>
+                          )}
                         </div>
-                      ))}
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0">
+                          {policies.length} Policies
+                        </span>
+                      </div>
 
-                      {chatLoading && (
-                        <div className="flex justify-start">
-                          <div className="bg-zinc-950 border border-zinc-800 text-zinc-500 rounded-lg p-3 text-xs flex items-center gap-2">
-                            <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
-                            <span>Reading Pinecone embeddings & formulating answer...</span>
+                      {/* Chat Messages Log */}
+                      <div className="flex-1 overflow-y-auto py-3 space-y-3 font-sans text-xs">
+                        {chatMessages.map((msg, i) => (
+                          <div
+                            key={i}
+                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[85%] rounded-lg p-3 leading-relaxed ${msg.role === 'user'
+                                  ? 'bg-zinc-800 text-zinc-100'
+                                  : 'bg-zinc-950 border border-zinc-800 text-zinc-300'
+                                }`}
+                            >
+                              <p className="whitespace-pre-wrap">{msg.text}</p>
+                              {msg.sources && msg.sources.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-zinc-800/80 text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 flex-wrap">
+                                  <span>Sources:</span>
+                                  {msg.sources.map((s, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400"
+                                    >
+                                      {s.title || s.file_name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        ))}
+
+                        {chatLoading && (
+                          <div className="flex justify-start">
+                            <div className="bg-zinc-950 border border-zinc-800 text-zinc-500 rounded-lg p-3 text-xs flex items-center gap-2">
+                              <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                              <span>Reading Pinecone embeddings & formulating answer...</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chat Input Form */}
+                      <form onSubmit={handleSendChatMessage} className="pt-3 border-t border-zinc-800 flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder={hasUserAiKey ? "Ask about company policies, rules, security..." : "Provide Google Gemini API key in 'API Keys' tab to chat..."}
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          disabled={chatLoading || !hasUserAiKey}
+                          className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 text-xs font-sans disabled:opacity-60"
+                        />
+                        <button
+                          type="submit"
+                          disabled={chatLoading || !chatInput.trim() || !hasUserAiKey}
+                          className="px-4 py-2 rounded-md bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-xs transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                        >
+                          Send
+                        </button>
+                      </form>
                     </div>
-
-                    {/* Chat Input Form */}
-                    <form onSubmit={handleSendChatMessage} className="pt-3 border-t border-zinc-800 flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Ask about company policies, rules, security..."
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        disabled={chatLoading}
-                        className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 text-xs font-sans"
-                      />
-                      <button
-                        type="submit"
-                        disabled={chatLoading || !chatInput.trim()}
-                        className="px-4 py-2 rounded-md bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-xs transition-colors disabled:opacity-50 shrink-0"
-                      >
-                        Send
-                      </button>
-                    </form>
                   </div>
-                </div>
+                </>
               )}
             </div>
           )}
@@ -2146,11 +2275,10 @@ export default function DashboardPage() {
               {/* Alert Feedback */}
               {unipileFeedback && (
                 <div
-                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${
-                    unipileFeedback.error
+                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${unipileFeedback.error
                       ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                       : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                  }`}
+                    }`}
                 >
                   <span>{unipileFeedback.text}</span>
                   <button onClick={() => setUnipileFeedback(null)} className="hover:text-white">✕</button>
@@ -2161,25 +2289,28 @@ export default function DashboardPage() {
               <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                    Inbound Webhook Endpoint
+                    Your Dedicated Inbound Webhook Endpoint
                   </span>
-                  <span className="text-[10px] font-mono text-emerald-400">POST Ready</span>
+                  <span className="text-[10px] font-mono text-emerald-400">POST Ready • Unique to You</span>
                 </div>
-                <p className="text-xs text-zinc-400">
-                  Provide this URL in your Unipile dashboard to stream email events, deliveries, and incoming messages directly to your backend:
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Paste this unique URL into your Unipile dashboard. When new emails arrive, Unipile will dispatch them to this endpoint, and our system automatically identifies your account even among millions of users:
                 </p>
-                <div className="flex items-center gap-2 bg-zinc-950 p-2 rounded-lg border border-zinc-800 font-mono text-xs">
-                  <span className="text-zinc-300 flex-1 truncate select-all px-2">
-                    {API_BASE}/api/email/webhook
+                <div className="flex items-center gap-2 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800 font-mono text-xs">
+                  <span className="text-zinc-300 flex-1 truncate select-all px-2 text-[11px]">
+                    {unipileSettings?.webhook_url || `${API_BASE}/api/email/webhook`}
                   </span>
                   <button
                     onClick={copyInboundWebhookUrl}
-                    className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedWebhook ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
                     <span>{copiedWebhook ? 'Copied' : 'Copy'}</span>
                   </button>
                 </div>
+                <p className="text-[11px] text-zinc-500 font-mono">
+                  Supported events: mail_received, message_received, email_sent
+                </p>
               </div>
 
               {/* Unipile Credentials Form */}
@@ -2190,7 +2321,7 @@ export default function DashboardPage() {
                       Unipile Configuration
                     </h2>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      Store your Unipile API Key and webhook parameters to enable bidirectional email automation.
+                      Store your Unipile API Key and account parameters to enable bidirectional email automation.
                     </p>
                   </div>
                   {unipileSettings?.is_active && (
@@ -2226,20 +2357,7 @@ export default function DashboardPage() {
 
                   <div>
                     <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1.5">
-                      Unipile Webhook Link (Optional)
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://api.unipile.com/api/v1/webhooks/..."
-                      value={unipileWebhookUrl}
-                      onChange={(e) => setUnipileWebhookUrl(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1.5">
-                      Unipile Account ID / DSN (Optional)
+                      Unipile Account ID (Optional)
                     </label>
                     <input
                       type="text"
@@ -2248,16 +2366,216 @@ export default function DashboardPage() {
                       onChange={(e) => setUnipileAccountId(e.target.value)}
                       className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
                     />
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      Secondary identifier to route Unipile events directly to your account.
+                    </p>
                   </div>
 
                   <button
                     type="submit"
                     disabled={unipileSaving}
-                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50"
+                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     {unipileSaving ? 'Saving to Database...' : 'Save Configuration'}
                   </button>
                 </form>
+              </div>
+
+              {/* AI Email Prompt & Filtering Instructions Card */}
+              <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
+                        AI Email Auto-Responder Prompt
+                      </h2>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-800/60">
+                        Rules & Filtering
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                      Instruct the AI on which incoming emails should be ignored, which emails receive automated replies, and custom guidelines to follow.
+                    </p>
+                  </div>
+                  {unipileAiPrompt ? (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0 self-start sm:self-auto flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      Active Prompt
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0 self-start sm:self-auto">
+                      Default Rules
+                    </span>
+                  )}
+                </div>
+
+                {promptFeedback && (
+                  <div
+                    className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${promptFeedback.error
+                        ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
+                        : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
+                      }`}
+                  >
+                    <span>{promptFeedback.text}</span>
+                    <button onClick={() => setPromptFeedback(null)} className="hover:text-white">✕</button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {/* Preset Templates */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-mono uppercase text-zinc-500">Preset Rules:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnipileAiPrompt(`1. EMAILS TO IGNORE:
+- Ignore all automated emails, newsletters, marketing promos, and system digests.
+- Ignore automated receipts, payment confirmations, and billing notifications (e.g., Stripe, AWS, GitHub, no-reply@*).
+- Ignore out-of-office autoreplies and undeliverable bounce messages.
+
+2. EMAILS TO REPLY:
+- Send helpful, polite replies to customer inquiries regarding our pricing, services, company policies, and support requests.
+- Formulate answers strictly grounded in our verified company policy knowledge base.
+- If the customer asks for a demo or enterprise sales quote, acknowledge warmly and ask for their company name and requirements.
+
+3. TONE & SIGNATURE:
+- Professional, concise, friendly, and authoritative.
+- Sign off with:
+Best regards,
+Customer Support Team`);
+                      }}
+                      className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
+                    >
+                      + Standard Ignore & Support
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnipileAiPrompt(`1. STRICT IGNORE:
+- Do NOT reply to promotional pitches, cold outbound sales emails, billing receipts, or system digests.
+- Do NOT reply to internal automated alerts.
+
+2. IMMEDIATE REPLIES:
+- Only reply to direct customer complaints, urgent support requests, and policy clarifications.
+- Keep responses within 3 sentences whenever possible.
+
+3. ESCALATION:
+- If a customer mentions an unresolved bug or refund, inform them that a senior agent will follow up within 24 hours.`);
+                      }}
+                      className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
+                    >
+                      + Strict Filtering Mode
+                    </button>
+
+                    {unipileAiPrompt && (
+                      <button
+                        type="button"
+                        onClick={() => setUnipileAiPrompt('')}
+                        className="px-2 py-1 rounded hover:bg-zinc-800 text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer ml-auto"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Textarea */}
+                  <div>
+                    <textarea
+                      rows={9}
+                      placeholder={`Enter custom rules and instructions for incoming email processing...
+
+Example:
+1. EMAILS TO IGNORE:
+- Ignore spam, newsletters, automated receipts (no-reply@...).
+- Skip out-of-office autoreplies.
+
+2. EMAILS TO REPLY:
+- Answer inquiries about our company policies, pricing, and support.
+- If unsure, escalate to human support.`}
+                      value={unipileAiPrompt}
+                      onChange={(e) => setUnipileAiPrompt(e.target.value)}
+                      className="w-full p-3.5 rounded-lg bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs leading-relaxed resize-y"
+                    />
+                    <div className="flex items-center justify-between mt-1 text-[11px] text-zinc-500 font-mono">
+                      <span>{unipileAiPrompt.length} characters</span>
+                      <span>Saved rules guide automated email evaluation</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveEmailPrompt()}
+                      disabled={savingPrompt}
+                      className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                    >
+                      {savingPrompt ? 'Saving Prompt...' : 'Save AI Email Prompt'}
+                    </button>
+
+                    <p className="text-[11px] text-zinc-500 font-mono hidden sm:block">
+                      Applies to all incoming webhook events for this account.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Inbound Emails Activity Stream */}
+              <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100">
+                      Live Inbound Email Stream ({inboundEmails.length})
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Emails captured via your dedicated Unipile webhook, ready for automated AI replies.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { if (token) loadUnipileData(token); }}
+                    className="px-2.5 py-1 text-[11px] font-mono rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {inboundEmails.length === 0 ? (
+                  <div className="p-8 rounded-lg border border-dashed border-zinc-800 text-center text-xs text-zinc-500 font-mono leading-relaxed">
+                    No incoming emails received yet. Once you paste your dedicated webhook into Unipile and an email arrives, it will automatically appear here with sender and subject details.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-zinc-800/80 max-h-[360px] overflow-y-auto pr-1">
+                    {inboundEmails.map((mail) => (
+                      <div key={mail.id} className="py-3 text-xs space-y-1">
+                        <div className="flex items-center justify-between text-zinc-200">
+                          <span className="font-semibold text-zinc-100 truncate">
+                            {mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email}
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-500 shrink-0 ml-2">
+                            {new Date(mail.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="text-zinc-300 font-medium truncate">
+                          {mail.subject}
+                        </div>
+                        {mail.snippet && (
+                          <div className="text-[11px] text-zinc-500 line-clamp-2 font-mono">
+                            {mail.snippet}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 pt-1 text-[10px] font-mono">
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60">
+                            {mail.reply_status}
+                          </span>
+                          {mail.account_id && (
+                            <span className="text-zinc-500">Account: {mail.account_id}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2399,101 +2717,101 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                <div>
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                    Add Provider Key
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">Stored securely in your PostgreSQL database.</p>
-                </div>
-
-                <form onSubmit={handleSaveApiKey} className="space-y-3.5 text-xs">
+                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
                   <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Provider</label>
-                    <select
-                      value={keyProvider}
-                      onChange={(e) => setKeyProvider(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs"
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                      Add Provider Key
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-0.5">Stored securely in your PostgreSQL database.</p>
+                  </div>
+
+                  <form onSubmit={handleSaveApiKey} className="space-y-3.5 text-xs">
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Provider</label>
+                      <select
+                        value={keyProvider}
+                        onChange={(e) => setKeyProvider(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs"
+                      >
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Label</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Production Key"
+                        value={keyName}
+                        onChange={(e) => setKeyName(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">API Key</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="sk-..."
+                        value={keyValue}
+                        onChange={(e) => setKeyValue(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingKey}
+                      className="w-full py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50"
                     >
-                      <option value="gemini">Google Gemini</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="anthropic">Anthropic</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Label</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Production Key"
-                      value={keyName}
-                      onChange={(e) => setKeyName(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">API Key</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="sk-..."
-                      value={keyValue}
-                      onChange={(e) => setKeyValue(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={savingKey}
-                    className="w-full py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50"
-                  >
-                    {savingKey ? 'Saving...' : 'Save API Key'}
-                  </button>
-                </form>
-              </div>
-
-              <div className="lg:col-span-2 p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                      Configured Keys ({apiKeys.length})
-                    </h3>
-                    <p className="text-xs text-zinc-500 mt-0.5">Masked key representations.</p>
-                  </div>
+                      {savingKey ? 'Saving...' : 'Save API Key'}
+                    </button>
+                  </form>
                 </div>
 
-                {apiKeys.length === 0 ? (
-                  <div className="p-8 rounded-lg border border-dashed border-zinc-800 text-center text-xs text-zinc-500 font-mono">
-                    No API keys added yet.
+                <div className="lg:col-span-2 p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                        Configured Keys ({apiKeys.length})
+                      </h3>
+                      <p className="text-xs text-zinc-500 mt-0.5">Masked key representations.</p>
+                    </div>
                   </div>
-                ) : (
-                  <div className="divide-y divide-zinc-800/80">
-                    {apiKeys.map((k) => (
-                      <div key={k.id} className="py-3 flex items-center justify-between text-xs">
-                        <div>
-                          <div className="font-medium text-zinc-100 flex items-center gap-2">
-                            <span>{k.name}</span>
-                            <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-                              {k.provider}
-                            </span>
-                          </div>
-                          <div className="text-[11px] font-mono text-zinc-500 mt-0.5">hint: {k.key_hint}</div>
-                        </div>
 
-                        <button
-                          onClick={() => handleDeleteApiKey(k.id)}
-                          className="text-zinc-500 hover:text-rose-400 p-1 transition-colors"
-                        >
-                          <IconTrash />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  {apiKeys.length === 0 ? (
+                    <div className="p-8 rounded-lg border border-dashed border-zinc-800 text-center text-xs text-zinc-500 font-mono">
+                      No API keys added yet.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-zinc-800/80">
+                      {apiKeys.map((k) => (
+                        <div key={k.id} className="py-3 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-medium text-zinc-100 flex items-center gap-2">
+                              <span>{k.name}</span>
+                              <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+                                {k.provider}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-zinc-500 mt-0.5">hint: {k.key_hint}</div>
+                          </div>
+
+                          <button
+                            onClick={() => handleDeleteApiKey(k.id)}
+                            className="text-zinc-500 hover:text-rose-400 p-1 transition-colors"
+                          >
+                            <IconTrash />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
             </div>
           )}
 
@@ -2512,11 +2830,10 @@ export default function DashboardPage() {
 
                 {profileMessage && (
                   <div
-                    className={`p-3 rounded-md text-xs font-mono ${
-                      profileMessage.error
+                    className={`p-3 rounded-md text-xs font-mono ${profileMessage.error
                         ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                         : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                    }`}
+                      }`}
                   >
                     {profileMessage.text}
                   </div>
@@ -2564,11 +2881,10 @@ export default function DashboardPage() {
 
                 {passwordMessage && (
                   <div
-                    className={`p-3 rounded-md text-xs font-mono ${
-                      passwordMessage.error
+                    className={`p-3 rounded-md text-xs font-mono ${passwordMessage.error
                         ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                         : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                    }`}
+                      }`}
                   >
                     {passwordMessage.text}
                   </div>
