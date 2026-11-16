@@ -37,9 +37,9 @@ export default function Footer() {
               Platform
             </h4>
             <ul className="space-y-2 text-xs">
-              <li><Link href="/#features" className="hover:text-zinc-200 transition-colors">Vector Knowledge Base</Link></li>
-              <li><Link href="/#features" className="hover:text-zinc-200 transition-colors">Unipile Email Sync</Link></li>
-              <li><Link href="/#features" className="hover:text-zinc-200 transition-colors">AI Playground</Link></li>
+              <li><Link href="/platform/vector-knowledge-base" className="hover:text-zinc-200 transition-colors">Vector Knowledge Base</Link></li>
+              <li><Link href="/platform/unipile-email-sync" className="hover:text-zinc-200 transition-colors">Unipile Email Sync</Link></li>
+              <li><Link href="/platform/ai-playground" className="hover:text-zinc-200 transition-colors">AI Playground</Link></li>
               <li><Link href="/dashboard" className="hover:text-zinc-200 transition-colors">Client Dashboard</Link></li>
             </ul>
           </div>
@@ -50,10 +50,10 @@ export default function Footer() {
               Resources
             </h4>
             <ul className="space-y-2 text-xs">
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">API Reference</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Webhook Inbound Spec</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Pinecone Vector Indexing</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">System Status</a></li>
+              <li><Link href="/resources/api-reference" className="hover:text-zinc-200 transition-colors">API Reference</Link></li>
+              <li><Link href="/resources/webhook-spec" className="hover:text-zinc-200 transition-colors">Webhook Inbound Spec</Link></li>
+              <li><Link href="/resources/pinecone-indexing" className="hover:text-zinc-200 transition-colors">Pinecone Vector Indexing</Link></li>
+              <li><Link href="/status" className="hover:text-zinc-200 transition-colors">System Status</Link></li>
             </ul>
           </div>
 
@@ -63,10 +63,10 @@ export default function Footer() {
               Organization
             </h4>
             <ul className="space-y-2 text-xs">
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Security & Privacy</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Compliance</a></li>
-              <li><a href="#" className="hover:text-zinc-200 transition-colors">Support</a></li>
+              <li><Link href="/security" className="hover:text-zinc-200 transition-colors">Security & Privacy</Link></li>
+              <li><Link href="/terms" className="hover:text-zinc-200 transition-colors">Terms of Service</Link></li>
+              <li><Link href="/compliance" className="hover:text-zinc-200 transition-colors">Compliance</Link></li>
+              <li><Link href="/support" className="hover:text-zinc-200 transition-colors">Support</Link></li>
             </ul>
           </div>
         </div>
@@ -74,10 +74,10 @@ export default function Footer() {
         <div className="pt-6 border-t border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 gap-4 font-mono">
           <p>© {year} AutoFlow AI Platforms Inc. All rights reserved.</p>
           <div className="flex items-center gap-3 text-[11px]">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <Link href="/status" className="flex items-center gap-1.5 hover:text-zinc-300 transition-colors">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>All systems operational</span>
-            </span>
+            </Link>
             <span>•</span>
             <span>Enterprise Cloud</span>
           </div>

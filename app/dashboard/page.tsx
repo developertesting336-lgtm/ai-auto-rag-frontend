@@ -29,6 +29,17 @@ import {
   saveUnipileSettings,
   saveEmailPrompt,
   fetchInboundEmails,
+  fetchInboundEmailById,
+  simulateInboundEmail,
+  fetchBillingStatus,
+  fetchPaymentHistory,
+  createCheckoutSession,
+  createCustomerPortal,
+  simulatePaymentSuccess,
+  BillingPlanItem,
+  UserSubscription,
+  PaymentItem,
+  BillingStatusResponse,
   User,
   Company,
   CompanyPolicy,
@@ -309,7 +320,109 @@ function IconPlus({ className = '' }: { className?: string }) {
   );
 }
 
-type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'playground' | 'apikeys' | 'settings';
+function IconSearch({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+    </svg>
+  );
+}
+
+function IconRefresh({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 21h5v-5" />
+    </svg>
+  );
+}
+
+function IconMailOpen({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 15, height: 15, minWidth: 15, minHeight: 15 }}
+    >
+      <path d="M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z" />
+      <path d="m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10" />
+    </svg>
+  );
+}
+
+function IconCreditCard({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
+    >
+      <rect width="20" height="14" x="2" y="5" rx="2" />
+      <line x1="2" x2="22" y1="10" y2="10" />
+    </svg>
+  );
+}
+
+function IconLock({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'playground' | 'apikeys' | 'billing' | 'settings';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -373,6 +486,17 @@ export default function DashboardPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [inboundEmails, setInboundEmails] = useState<InboundEmailItem[]>([]);
 
+  // Email Dashboard & Viewer state
+  const [emailSubTab, setEmailSubTab] = useState<'inbox' | 'prompt' | 'settings'>('inbox');
+  const [selectedEmail, setSelectedEmail] = useState<InboundEmailItem | null>(null);
+  const [selectedEmailLive, setSelectedEmailLive] = useState<any | null>(null);
+  const [loadingEmailDetail, setLoadingEmailDetail] = useState(false);
+  const [simulatingEmail, setSimulatingEmail] = useState(false);
+  const [emailSearchQuery, setEmailSearchQuery] = useState('');
+  const [emailViewerTab, setEmailViewerTab] = useState<'body' | 'unipile' | 'raw'>('body');
+  const [copiedBody, setCopiedBody] = useState(false);
+  const [copiedDetailId, setCopiedDetailId] = useState(false);
+
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [keyProvider, setKeyProvider] = useState('gemini');
@@ -380,9 +504,32 @@ export default function DashboardPage() {
   const [keyValue, setKeyValue] = useState('');
   const [savingKey, setSavingKey] = useState(false);
 
+  // Billing & Subscription state
+  const [billingStatus, setBillingStatus] = useState<BillingStatusResponse | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentItem[]>([]);
+  const [loadingBilling, setLoadingBilling] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [billingFeedback, setBillingFeedback] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const hasActiveSubscription = Boolean(billingStatus?.hasActiveSubscription);
+  const isPastDue = Boolean(billingStatus?.isPastDue);
+
   // Derived user API key status (Strictly requiring user-provided key)
   const hasGeminiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini');
   const hasUserAiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini' || k.provider?.toLowerCase() === 'openai');
+  const isUnipileConnected = Boolean(unipileSettings?.is_active && (unipileSettings?.api_key_masked || unipileSettings?.account_id || inboundEmails.length > 0));
+  const filteredInboundEmails = inboundEmails.filter((mail) => {
+    if (!emailSearchQuery.trim()) return true;
+    const q = emailSearchQuery.toLowerCase();
+    return (
+      (mail.subject || '').toLowerCase().includes(q) ||
+      (mail.from_email || '').toLowerCase().includes(q) ||
+      (mail.from_name || '').toLowerCase().includes(q) ||
+      (mail.snippet || '').toLowerCase().includes(q) ||
+      (mail.body || '').toLowerCase().includes(q) ||
+      (mail.message_id || '').toLowerCase().includes(q)
+    );
+  });
 
   // AI Playground state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -431,6 +578,24 @@ export default function DashboardPage() {
     loadCompanyData(storedToken);
     loadUnipileData(storedToken);
     loadApiKeys(storedToken);
+    loadBillingData(storedToken);
+
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const paymentStatus = searchParams.get('payment');
+      if (paymentStatus === 'success') {
+        setBillingFeedback({
+          text: '🎉 Payment Successful! Your subscription is active, and all features (Unipile email automation & custom chatbots) are unlocked.',
+        });
+        setCurrentSection('billing');
+      } else if (paymentStatus === 'cancelled') {
+        setBillingFeedback({
+          text: 'Checkout was cancelled. No charges were made.',
+          error: true,
+        });
+        setCurrentSection('billing');
+      }
+    }
   }, [router]);
 
   const loadCompanyData = async (authToken: string, targetCompanyId?: string) => {
@@ -569,6 +734,74 @@ export default function DashboardPage() {
           },
         ]);
       }
+    }
+  };
+
+  const loadBillingData = async (authToken: string) => {
+    setLoadingBilling(true);
+    try {
+      const [bStatus, pHistory] = await Promise.all([
+        fetchBillingStatus(authToken),
+        fetchPaymentHistory(authToken),
+      ]);
+      if (bStatus.success) {
+        setBillingStatus(bStatus);
+      }
+      if (pHistory.success && pHistory.payments) {
+        setPaymentHistory(pHistory.payments);
+      }
+    } finally {
+      setLoadingBilling(false);
+    }
+  };
+
+  const handleSubscribePlan = async (planId: string) => {
+    if (!token) return;
+    setCheckoutLoading(planId);
+    setBillingFeedback(null);
+    try {
+      const res = await createCheckoutSession(planId, token);
+      if (res.success && res.url) {
+        window.location.href = res.url;
+      } else {
+        setBillingFeedback({ text: res.error || 'Failed to start Stripe checkout session.', error: true });
+      }
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const handleQuickTestPayment = async (planId: string) => {
+    if (!token) return;
+    setCheckoutLoading(`test_${planId}`);
+    setBillingFeedback(null);
+    try {
+      const res = await simulatePaymentSuccess(planId, token);
+      if (res.success) {
+        setBillingFeedback({
+          text: `🎉 ${res.message || 'Plan activated! Features are now unlocked.'}`,
+        });
+        loadBillingData(token);
+      } else {
+        setBillingFeedback({ text: res.error || 'Failed to activate test subscription.', error: true });
+      }
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const handleOpenCustomerPortal = async () => {
+    if (!token) return;
+    setCheckoutLoading('portal');
+    try {
+      const res = await createCustomerPortal(token);
+      if (res.success && res.url) {
+        window.location.href = res.url;
+      } else {
+        setBillingFeedback({ text: res.error || 'No active Stripe customer found.', error: true });
+      }
+    } finally {
+      setCheckoutLoading(null);
     }
   };
 
@@ -838,6 +1071,49 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedWebhook(false), 2000);
   };
 
+  const handleOpenEmail = async (email: InboundEmailItem) => {
+    setSelectedEmail(email);
+    setSelectedEmailLive(null);
+    setEmailViewerTab('body');
+    if (!token) return;
+
+    setLoadingEmailDetail(true);
+    try {
+      const res = await fetchInboundEmailById(email.id, token);
+      if (res.success) {
+        if (res.email) setSelectedEmail(res.email);
+        if (res.unipileLive) setSelectedEmailLive(res.unipileLive);
+      }
+    } finally {
+      setLoadingEmailDetail(false);
+    }
+  };
+
+  const handleSimulateEmail = async () => {
+    if (!token) return;
+    setSimulatingEmail(true);
+    try {
+      const res = await simulateInboundEmail(
+        {
+          from_name: 'Alex Johnson',
+          from_email: 'alex.johnson@enterprise-client.com',
+          subject: 'Questions regarding SLA response times and data privacy',
+          body: `Hello Team,\n\nWe are currently evaluating your platform for our enterprise workflow automation.\n\nCould you please clarify:\n1. What is your guaranteed uptime SLA?\n2. How are policy documents secured in vector storage?\n3. Do you support custom model timeouts and retries?\n\nLooking forward to your response,\nAlex Johnson\nVP of Technology, Enterprise Client Inc.`,
+        },
+        token
+      );
+      if (res.success && res.email) {
+        setInboundEmails((prev) => [res.email!, ...prev]);
+        setUnipileFeedback({ text: 'Simulated inbound email created and saved to database! Click to inspect below.' });
+        setTimeout(() => setUnipileFeedback(null), 4000);
+      } else {
+        setUnipileFeedback({ text: res.error || 'Failed to simulate email.', error: true });
+      }
+    } finally {
+      setSimulatingEmail(false);
+    }
+  };
+
   const handleSaveApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keyValue.trim() || !token) return;
@@ -1048,7 +1324,7 @@ export default function DashboardPage() {
                 setCurrentSection('chatbot');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'chatbot'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors cursor-pointer ${currentSection === 'chatbot'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
@@ -1059,7 +1335,10 @@ export default function DashboardPage() {
                 </div>
                 <span className="truncate">Website Chatbot</span>
               </div>
-              {company?.api_key && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-2" />}
+              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                {!hasActiveSubscription && <IconLock className="w-3.5 h-3.5 text-amber-400" />}
+                {hasActiveSubscription && company?.api_key && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+              </div>
             </button>
 
             <button
@@ -1067,7 +1346,7 @@ export default function DashboardPage() {
                 setCurrentSection('email');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'email'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors cursor-pointer ${currentSection === 'email'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
@@ -1076,9 +1355,17 @@ export default function DashboardPage() {
                 <div className="w-4 h-4 shrink-0 flex items-center justify-center">
                   <IconMail className={currentSection === 'email' ? 'text-zinc-100' : 'text-zinc-400'} />
                 </div>
-                <span className="truncate">Email (Unipile)</span>
+                <span className="truncate">Email Automation</span>
               </div>
-              {unipileSettings?.is_active && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-2" />}
+              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                {!hasActiveSubscription && <IconLock className="w-3.5 h-3.5 text-amber-400" />}
+                {hasActiveSubscription && inboundEmails.length > 0 && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                    {inboundEmails.length}
+                  </span>
+                )}
+                {hasActiveSubscription && isUnipileConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+              </div>
             </button>
 
             <div className="pt-3 pb-1 px-2">
@@ -1092,7 +1379,7 @@ export default function DashboardPage() {
                 setCurrentSection('playground');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${currentSection === 'playground'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors cursor-pointer ${currentSection === 'playground'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
@@ -1108,7 +1395,7 @@ export default function DashboardPage() {
                 setCurrentSection('apikeys');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors ${currentSection === 'apikeys'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors cursor-pointer ${currentSection === 'apikeys'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
@@ -1126,10 +1413,37 @@ export default function DashboardPage() {
 
             <button
               onClick={() => {
+                setCurrentSection('billing');
+                setSidebarOpen(false);
+              }}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors cursor-pointer ${currentSection === 'billing'
+                  ? 'bg-zinc-800 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                }`}
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                  <IconCreditCard className={currentSection === 'billing' ? 'text-zinc-100' : 'text-zinc-400'} />
+                </div>
+                <span className="truncate">Billing & Plans</span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.2 rounded shrink-0 ml-2 ${
+                  hasActiveSubscription
+                    ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/60'
+                    : 'bg-amber-950/60 text-amber-400 border border-amber-800/60'
+                }`}
+              >
+                {hasActiveSubscription ? (billingStatus?.subscription?.plan_id?.toUpperCase() || 'PAID') : 'UNPAID'}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
                 setCurrentSection('settings');
                 setSidebarOpen(false);
               }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors ${currentSection === 'settings'
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors cursor-pointer ${currentSection === 'settings'
                   ? 'bg-zinc-800 text-white shadow-xs'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
@@ -1286,14 +1600,38 @@ export default function DashboardPage() {
                     <span>{company ? 'Manage Company' : 'Setup Company'}</span>
                   </button>
                   <button
-                    onClick={() => setCurrentSection('email')}
-                    className="px-3 py-1.5 rounded-md text-xs font-medium border border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 transition-colors flex items-center gap-1.5"
+                    onClick={() => setCurrentSection('billing')}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium border border-amber-700/80 bg-amber-950/40 text-amber-300 hover:bg-amber-900/40 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
-                    <IconMail className="w-3.5 h-3.5" />
-                    <span>Unipile Webhook</span>
+                    <IconCreditCard className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{hasActiveSubscription ? 'Billing & Plan' : 'Pay Subscription'}</span>
                   </button>
                 </div>
               </div>
+
+              {/* Paywall Banner for Inactive Subscription */}
+              {!hasActiveSubscription && (
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-amber-900/60 border border-amber-700/60 flex items-center justify-center text-amber-300 shrink-0">
+                      <IconLock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-amber-200">Subscription Inactive — Payment Required</h3>
+                      <p className="text-[11px] text-amber-300/80 mt-0.5">
+                        Unipile email automation and custom chatbot embeddings are locked until payment is made. Select a plan to activate all features immediately.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setCurrentSection('billing')}
+                    className="px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 font-semibold text-xs transition-colors shrink-0 cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+                  >
+                    <span>Choose Plan & Pay</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              )}
 
               {/* Minimalist Metrics Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1342,15 +1680,15 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span
-                      className={`w-2 h-2 rounded-full ${unipileSettings?.is_active ? 'bg-emerald-400' : 'bg-zinc-600'
+                      className={`w-2 h-2 rounded-full ${isUnipileConnected ? 'bg-emerald-400' : 'bg-zinc-600'
                         }`}
                     />
                     <span className="text-sm font-semibold text-zinc-100">
-                      {unipileSettings?.is_active ? 'Active' : 'Unconfigured'}
+                      {isUnipileConnected ? `${inboundEmails.length} Inbound Mail${inboundEmails.length === 1 ? '' : 's'}` : 'Unconfigured'}
                     </span>
                   </div>
                   <div className="text-[11px] text-zinc-500 mt-1">
-                    Unipile sync listener
+                    {isUnipileConnected ? 'Unipile active & listening' : 'Click to setup Unipile webhook'}
                   </div>
                 </div>
 
@@ -1899,6 +2237,29 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <>
+                  {/* Subscription Paywall Warning Banner if not paid */}
+                  {!hasActiveSubscription && (
+                    <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 mt-0.5">
+                          <IconLock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-amber-200">Subscription Required for Website Chatbot & Embeds</h4>
+                          <p className="text-zinc-300 mt-0.5 leading-relaxed">
+                            Generating Chatbot client API keys, testing policy Q&A, and embedding the chatbot widget on external websites require an active subscription plan.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setCurrentSection('billing')}
+                        className="px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
+                      >
+                        Subscribe to Unlock →
+                      </button>
+                    </div>
+                  )}
+
                   {/* Google Gemini API Key Warning Banner if missing */}
                   {!hasUserAiKey && (
                     <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
@@ -1957,18 +2318,19 @@ export default function DashboardPage() {
                           <input
                             type="text"
                             required
-                            disabled={!hasUserAiKey}
-                            placeholder={hasUserAiKey ? "Key label e.g. Production Website" : "Configure Gemini key in API Keys tab first"}
+                            disabled={!hasUserAiKey || !hasActiveSubscription}
+                            placeholder={!hasActiveSubscription ? "Subscription required to generate chatbot keys" : hasUserAiKey ? "Key label e.g. Production Website" : "Configure Gemini key in API Keys tab first"}
                             value={newChatbotKeyName}
                             onChange={(e) => setNewChatbotKeyName(e.target.value)}
                             className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-sans text-xs disabled:opacity-50"
                           />
                           <button
                             type="submit"
-                            disabled={creatingChatbotKey || !newChatbotKeyName.trim() || !hasUserAiKey}
+                            disabled={creatingChatbotKey || !newChatbotKeyName.trim() || !hasUserAiKey || !hasActiveSubscription}
                             className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 shrink-0 flex items-center gap-1.5 cursor-pointer"
                           >
-                            {creatingChatbotKey ? 'Generating...' : '+ Generate Key'}
+                            <IconPlus className="w-3.5 h-3.5" />
+                            <span>{creatingChatbotKey ? 'Generating...' : '+ Generate Key'}</span>
                           </button>
                         </form>
                       </div>
@@ -2271,164 +2633,400 @@ export default function DashboardPage() {
               VIEW 3: EMAIL PAGE (UNIPILE INTEGRATION - DEVELOPER-GRADE UI)
           ========================================================================= */}
           {currentSection === 'email' && (
-            <div className="space-y-6 max-w-3xl">
+            <div className="space-y-6 max-w-5xl">
               {/* Alert Feedback */}
               {unipileFeedback && (
                 <div
-                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${unipileFeedback.error
+                  className={`p-3.5 rounded-lg text-xs font-mono flex items-center justify-between ${
+                    unipileFeedback.error
                       ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                       : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                    }`}
+                  }`}
                 >
                   <span>{unipileFeedback.text}</span>
-                  <button onClick={() => setUnipileFeedback(null)} className="hover:text-white">✕</button>
+                  <button onClick={() => setUnipileFeedback(null)} className="hover:text-white cursor-pointer">✕</button>
                 </div>
               )}
 
-              {/* Inbound Webhook Card (Stripe/Resend Style) */}
-              <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                    Your Dedicated Inbound Webhook Endpoint
-                  </span>
-                  <span className="text-[10px] font-mono text-emerald-400">POST Ready • Unique to You</span>
+              {/* Sub-navigation & Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1 border-b border-zinc-800/80">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
+                      Unipile Email Automation
+                    </h1>
+                    {isUnipileConnected ? (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Connected & Active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        Awaiting Setup
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Live webhook-driven email pipeline: capture inbound emails, inspect live from Unipile, and configure AI auto-responder policies.
+                  </p>
                 </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Paste this unique URL into your Unipile dashboard. When new emails arrive, Unipile will dispatch them to this endpoint, and our system automatically identifies your account even among millions of users:
-                </p>
-                <div className="flex items-center gap-2 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800 font-mono text-xs">
-                  <span className="text-zinc-300 flex-1 truncate select-all px-2 text-[11px]">
-                    {unipileSettings?.webhook_url || `${API_BASE}/api/email/webhook`}
-                  </span>
+
+                {/* Sub-tabs */}
+                <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800/80 shrink-0 self-start sm:self-auto text-xs">
                   <button
-                    onClick={copyInboundWebhookUrl}
-                    className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+                    type="button"
+                    onClick={() => setEmailSubTab('inbox')}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all flex items-center gap-2 cursor-pointer ${
+                      emailSubTab === 'inbox'
+                        ? 'bg-zinc-800 text-white shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
                   >
-                    {copiedWebhook ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
-                    <span>{copiedWebhook ? 'Copied' : 'Copy'}</span>
+                    <IconMail className="w-3.5 h-3.5" />
+                    <span>Inbound Feed</span>
+                    <span className="ml-1 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-zinc-700/80 text-zinc-200">
+                      {inboundEmails.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEmailSubTab('prompt')}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all flex items-center gap-2 cursor-pointer ${
+                      emailSubTab === 'prompt'
+                        ? 'bg-zinc-800 text-white shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <IconSparkles className="w-3.5 h-3.5" />
+                    <span>AI Rules & Prompt</span>
+                    {unipileAiPrompt && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEmailSubTab('settings')}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all flex items-center gap-2 cursor-pointer ${
+                      emailSubTab === 'settings'
+                        ? 'bg-zinc-800 text-white shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <IconSettings className="w-3.5 h-3.5" />
+                    <span>Webhook & Credentials</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-zinc-500 font-mono">
-                  Supported events: mail_received, message_received, email_sent
-                </p>
               </div>
 
-              {/* Unipile Credentials Form */}
-              <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
-                      Unipile Configuration
-                    </h2>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Store your Unipile API Key and account parameters to enable bidirectional email automation.
-                    </p>
+              {/* Subscription Paywall Banner if unpaid */}
+              {!hasActiveSubscription && (
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-amber-900/60 border border-amber-700/60 flex items-center justify-center text-amber-300 shrink-0">
+                      <IconLock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-amber-200">Subscription Required for Unipile Email Automation</h3>
+                      <p className="text-zinc-300 mt-0.5 leading-relaxed">
+                        Inbound webhook dispatching, automated replies, and AI rule evaluation are locked. Subscribe to an active plan to start processing emails.
+                      </p>
+                    </div>
                   </div>
-                  {unipileSettings?.is_active && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60">
-                      Active
-                    </span>
-                  )}
+                  <button
+                    onClick={() => setCurrentSection('billing')}
+                    className="px-4 py-2 rounded-md bg-amber-400 hover:bg-amber-300 text-zinc-950 font-semibold text-xs transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
+                  >
+                    Upgrade in Billing →
+                  </button>
                 </div>
+              )}
 
-                <form onSubmit={handleSaveUnipile} className="space-y-4 text-xs">
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="font-mono uppercase text-[10px] text-zinc-400">
-                        Unipile API Key *
-                      </label>
+              {/* TAB 1: INBOUND FEED & EMAIL DASHBOARD */}
+              {emailSubTab === 'inbox' && (
+                <div className="space-y-6">
+                  {/* Status & Quick Action Metric Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Total Inbound Emails</span>
+                      <div className="text-2xl font-bold text-zinc-100">{inboundEmails.length}</div>
+                      <p className="text-[11px] text-zinc-500 font-mono">Logged from Unipile webhooks</p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Unipile Account ID</span>
+                      <div className="text-sm font-semibold font-mono text-zinc-200 truncate">
+                        {unipileSettings?.account_id || (unipileSettings?.is_active ? 'Active Linked Account' : 'Not configured')}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 font-mono">
+                        {isUnipileConnected ? 'Status: Ready' : 'Status: Needs API Key'}
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">AI Rules Engine</span>
+                      <div className="text-sm font-semibold text-zinc-200 truncate flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${unipileAiPrompt ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
+                        <span>{unipileAiPrompt ? 'Custom Instructions' : 'Default Auto-Reply'}</span>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300"
+                        onClick={() => setEmailSubTab('prompt')}
+                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-mono underline cursor-pointer"
                       >
-                        {showApiKey ? 'Hide' : 'Show'}
+                        Edit ignore/reply prompt →
                       </button>
                     </div>
-                    <input
-                      type={showApiKey ? 'text' : 'password'}
-                      required
-                      placeholder={unipileSettings?.api_key_masked ? `Stored: ${unipileSettings.api_key_masked}` : 'Enter your Unipile API key'}
-                      value={unipileApiKey}
-                      onChange={(e) => setUnipileApiKey(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
-                    />
+
+                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Webhook URL</span>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-mono text-zinc-300 truncate">
+                          {unipileSettings?.webhook_url ? `${unipileSettings.webhook_url.slice(0, 24)}...` : 'Unique Endpoint'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={copyInboundWebhookUrl}
+                          className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-mono cursor-pointer shrink-0"
+                        >
+                          {copiedWebhook ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 font-mono">POST handler for Unipile events</p>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1.5">
-                      Unipile Account ID (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. acc_01j7h8..."
-                      value={unipileAccountId}
-                      onChange={(e) => setUnipileAccountId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
-                    />
-                    <p className="text-[10px] text-zinc-500 mt-1">
-                      Secondary identifier to route Unipile events directly to your account.
-                    </p>
+                  {/* Toolbar: Search, Simulate Test Email, Refresh */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/80">
+                    <div className="relative flex-1">
+                      <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                      <input
+                        type="text"
+                        placeholder="Search emails by sender, email address, subject, or content..."
+                        value={emailSearchQuery}
+                        onChange={(e) => setEmailSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 rounded-lg bg-zinc-950 border border-zinc-800 focus:border-zinc-700 focus:outline-none text-zinc-100 placeholder:text-zinc-600 text-xs font-mono"
+                      />
+                      {emailSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setEmailSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSimulateEmail}
+                        disabled={simulatingEmail}
+                        className="px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        title="Simulate an incoming email arriving via Unipile Webhook"
+                      >
+                        <IconPlus className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{simulatingEmail ? 'Simulating...' : 'Simulate Test Email'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { if (token) loadUnipileData(token); }}
+                        className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
+                        title="Refresh email feed"
+                      >
+                        <IconRefresh />
+                      </button>
+                    </div>
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={unipileSaving}
-                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    {unipileSaving ? 'Saving to Database...' : 'Save Configuration'}
-                  </button>
-                </form>
-              </div>
-
-              {/* AI Email Prompt & Filtering Instructions Card */}
-              <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
-                        AI Email Auto-Responder Prompt
-                      </h2>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-800/60">
-                        Rules & Filtering
+                  {/* Emails List */}
+                  <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/80 overflow-hidden">
+                    <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <IconMail className="text-zinc-400" />
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                          Inbound Webhook Emails
+                        </h2>
+                      </div>
+                      <span className="text-[11px] font-mono text-zinc-500">
+                        Showing {filteredInboundEmails.length} of {inboundEmails.length}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                      Instruct the AI on which incoming emails should be ignored, which emails receive automated replies, and custom guidelines to follow.
-                    </p>
+
+                    {filteredInboundEmails.length === 0 ? (
+                      <div className="p-12 text-center space-y-3">
+                        <div className="w-12 h-12 rounded-full bg-zinc-800/60 border border-zinc-700/60 flex items-center justify-center mx-auto text-zinc-400">
+                          <IconMail className="w-6 h-6" />
+                        </div>
+                        {inboundEmails.length === 0 ? (
+                          <>
+                            <h3 className="text-sm font-semibold text-zinc-200">No Webhook Emails Received Yet</h3>
+                            <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                              When incoming emails arrive at your dedicated Unipile webhook, our system automatically saves the email ID, sender, recipient, subject, preview snippet, and full body to the database.
+                            </p>
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={handleSimulateEmail}
+                                disabled={simulatingEmail}
+                                className="px-4 py-2 rounded-lg bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors cursor-pointer"
+                              >
+                                {simulatingEmail ? 'Creating...' : '+ Simulate First Inbound Email'}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <h3 className="text-sm font-semibold text-zinc-200">No Matching Emails Found</h3>
+                            <p className="text-xs text-zinc-400">
+                              No emails match your search query &ldquo;{emailSearchQuery}&rdquo;.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setEmailSearchQuery('')}
+                              className="text-xs font-mono text-indigo-400 hover:text-indigo-300 cursor-pointer underline"
+                            >
+                              Clear search query
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-zinc-800/80">
+                        {filteredInboundEmails.map((mail) => (
+                          <div
+                            key={mail.id}
+                            onClick={() => handleOpenEmail(mail)}
+                            className="p-4 hover:bg-zinc-800/40 transition-colors cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="space-y-1.5 flex-1 min-w-0 pr-2">
+                              {/* Row 1: Sender info + Time */}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 truncate">
+                                  <span className="font-semibold text-xs text-zinc-100 group-hover:text-white transition-colors truncate">
+                                    {mail.from_name || mail.from_email || 'Unknown Sender'}
+                                  </span>
+                                  {mail.from_email && (
+                                    <span className="text-[11px] font-mono text-zinc-400 truncate hidden sm:inline">
+                                      &lt;{mail.from_email}&gt;
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono text-zinc-500 shrink-0">
+                                  {new Date(mail.created_at).toLocaleDateString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+
+                              {/* Row 2: Subject */}
+                              <div className="text-xs font-medium text-zinc-200 group-hover:text-indigo-300 transition-colors truncate">
+                                {mail.subject || '(No Subject)'}
+                              </div>
+
+                              {/* Row 3: Body Preview (Snippet) */}
+                              <div className="text-[11px] text-zinc-400 line-clamp-1 font-mono leading-relaxed">
+                                {mail.snippet || mail.body?.slice(0, 140) || 'No preview text'}
+                              </div>
+                            </div>
+
+                            {/* Badges & Action */}
+                            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                              <span
+                                className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                                  mail.reply_status === 'auto_replied'
+                                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
+                                    : mail.reply_status === 'ignored'
+                                    ? 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+                                    : 'bg-indigo-950/50 text-indigo-300 border-indigo-800/60'
+                                }`}
+                              >
+                                {mail.reply_status}
+                              </span>
+
+                              {mail.message_id && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950 text-zinc-400 border border-zinc-800 hidden md:inline truncate max-w-[120px]">
+                                  {mail.message_id}
+                                </span>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEmail(mail);
+                                }}
+                                className="px-2.5 py-1 rounded bg-zinc-800 group-hover:bg-zinc-700 text-[11px] text-zinc-300 group-hover:text-white font-medium transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <span>Open</span>
+                                <span>→</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {unipileAiPrompt ? (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0 self-start sm:self-auto flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      Active Prompt
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0 self-start sm:self-auto">
-                      Default Rules
-                    </span>
-                  )}
                 </div>
+              )}
 
-                {promptFeedback && (
-                  <div
-                    className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${promptFeedback.error
-                        ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
-                        : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                      }`}
-                  >
-                    <span>{promptFeedback.text}</span>
-                    <button onClick={() => setPromptFeedback(null)} className="hover:text-white">✕</button>
+              {/* TAB 2: AI AUTO-RESPONDER RULES */}
+              {emailSubTab === 'prompt' && (
+                <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
+                          AI Email Auto-Responder Prompt
+                        </h2>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-800/60">
+                          Rules & Filtering
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                        Instruct the AI on which incoming emails should be ignored, which emails receive automated replies, and custom guidelines to follow.
+                      </p>
+                    </div>
+                    {unipileAiPrompt ? (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0 self-start sm:self-auto flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Active Prompt
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0 self-start sm:self-auto">
+                        Default Rules
+                      </span>
+                    )}
                   </div>
-                )}
 
-                <div className="space-y-3">
-                  {/* Preset Templates */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-mono uppercase text-zinc-500">Preset Rules:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUnipileAiPrompt(`1. EMAILS TO IGNORE:
+                  {promptFeedback && (
+                    <div
+                      className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${
+                        promptFeedback.error
+                          ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
+                          : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
+                      }`}
+                    >
+                      <span>{promptFeedback.text}</span>
+                      <button onClick={() => setPromptFeedback(null)} className="hover:text-white cursor-pointer">✕</button>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {/* Preset Templates */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono uppercase text-zinc-500">Preset Rules:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnipileAiPrompt(`1. EMAILS TO IGNORE:
 - Ignore all automated emails, newsletters, marketing promos, and system digests.
 - Ignore automated receipts, payment confirmations, and billing notifications (e.g., Stripe, AWS, GitHub, no-reply@*).
 - Ignore out-of-office autoreplies and undeliverable bounce messages.
@@ -2443,16 +3041,16 @@ export default function DashboardPage() {
 - Sign off with:
 Best regards,
 Customer Support Team`);
-                      }}
-                      className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
-                    >
-                      + Standard Ignore & Support
-                    </button>
+                        }}
+                        className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
+                      >
+                        + Standard Ignore & Support
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUnipileAiPrompt(`1. STRICT IGNORE:
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnipileAiPrompt(`1. STRICT IGNORE:
 - Do NOT reply to promotional pitches, cold outbound sales emails, billing receipts, or system digests.
 - Do NOT reply to internal automated alerts.
 
@@ -2462,28 +3060,28 @@ Customer Support Team`);
 
 3. ESCALATION:
 - If a customer mentions an unresolved bug or refund, inform them that a senior agent will follow up within 24 hours.`);
-                      }}
-                      className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
-                    >
-                      + Strict Filtering Mode
-                    </button>
-
-                    {unipileAiPrompt && (
-                      <button
-                        type="button"
-                        onClick={() => setUnipileAiPrompt('')}
-                        className="px-2 py-1 rounded hover:bg-zinc-800 text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer ml-auto"
+                        }}
+                        className="px-2.5 py-1 rounded bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 transition-colors cursor-pointer"
                       >
-                        Clear
+                        + Strict Filtering Mode
                       </button>
-                    )}
-                  </div>
 
-                  {/* Textarea */}
-                  <div>
-                    <textarea
-                      rows={9}
-                      placeholder={`Enter custom rules and instructions for incoming email processing...
+                      {unipileAiPrompt && (
+                        <button
+                          type="button"
+                          onClick={() => setUnipileAiPrompt('')}
+                          className="px-2 py-1 rounded hover:bg-zinc-800 text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer ml-auto"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Textarea */}
+                    <div>
+                      <textarea
+                        rows={11}
+                        placeholder={`Enter custom rules and instructions for incoming email processing...
 
 Example:
 1. EMAILS TO IGNORE:
@@ -2493,90 +3091,415 @@ Example:
 2. EMAILS TO REPLY:
 - Answer inquiries about our company policies, pricing, and support.
 - If unsure, escalate to human support.`}
-                      value={unipileAiPrompt}
-                      onChange={(e) => setUnipileAiPrompt(e.target.value)}
-                      className="w-full p-3.5 rounded-lg bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs leading-relaxed resize-y"
-                    />
-                    <div className="flex items-center justify-between mt-1 text-[11px] text-zinc-500 font-mono">
-                      <span>{unipileAiPrompt.length} characters</span>
-                      <span>Saved rules guide automated email evaluation</span>
+                        value={unipileAiPrompt}
+                        onChange={(e) => setUnipileAiPrompt(e.target.value)}
+                        className="w-full p-3.5 rounded-lg bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs leading-relaxed resize-y"
+                      />
+                      <div className="flex items-center justify-between mt-1 text-[11px] text-zinc-500 font-mono">
+                        <span>{unipileAiPrompt.length} characters</span>
+                        <span>Rules will govern automatic replies to incoming webhooks</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEmailPrompt()}
+                        disabled={savingPrompt}
+                        className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                      >
+                        {savingPrompt ? 'Saving Prompt...' : 'Save AI Email Prompt'}
+                      </button>
+
+                      <p className="text-[11px] text-zinc-500 font-mono hidden sm:block">
+                        Applies to all incoming webhook events for this account.
+                      </p>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  <div className="flex items-center justify-between pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveEmailPrompt()}
-                      disabled={savingPrompt}
-                      className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-                    >
-                      {savingPrompt ? 'Saving Prompt...' : 'Save AI Email Prompt'}
-                    </button>
-
-                    <p className="text-[11px] text-zinc-500 font-mono hidden sm:block">
-                      Applies to all incoming webhook events for this account.
+              {/* TAB 3: WEBHOOK & CREDENTIALS */}
+              {emailSubTab === 'settings' && (
+                <div className="space-y-6">
+                  {/* Dedicated Webhook URL Card */}
+                  <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                        Your Dedicated Inbound Webhook Endpoint
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400">POST Ready • Multi-Tenant Scoped</span>
+                    </div>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      Paste this unique URL into your Unipile dashboard. When new emails arrive, Unipile will dispatch them to this endpoint, and our system automatically identifies your account even among millions of users:
+                    </p>
+                    <div className="flex items-center gap-2 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800 font-mono text-xs">
+                      <span className="text-zinc-300 flex-1 truncate select-all px-2 text-[11px]">
+                        {unipileSettings?.webhook_url || `${API_BASE}/api/email/webhook`}
+                      </span>
+                      <button
+                        onClick={copyInboundWebhookUrl}
+                        className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {copiedWebhook ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
+                        <span>{copiedWebhook ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-500 font-mono">
+                      Supported events: mail_received, message_received, email_sent
                     </p>
                   </div>
-                </div>
-              </div>
 
-              {/* Inbound Emails Activity Stream */}
-              <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-zinc-100">
-                      Live Inbound Email Stream ({inboundEmails.length})
-                    </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Emails captured via your dedicated Unipile webhook, ready for automated AI replies.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { if (token) loadUnipileData(token); }}
-                    className="px-2.5 py-1 text-[11px] font-mono rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
-                  >
-                    Refresh
-                  </button>
-                </div>
+                  {/* Unipile Credentials Form */}
+                  <div className="p-6 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
+                          Unipile Configuration
+                        </h2>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Store your Unipile API Key and account parameters to enable bidirectional email automation.
+                        </p>
+                      </div>
+                      {unipileSettings?.is_active && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60">
+                          Active
+                        </span>
+                      )}
+                    </div>
 
-                {inboundEmails.length === 0 ? (
-                  <div className="p-8 rounded-lg border border-dashed border-zinc-800 text-center text-xs text-zinc-500 font-mono leading-relaxed">
-                    No incoming emails received yet. Once you paste your dedicated webhook into Unipile and an email arrives, it will automatically appear here with sender and subject details.
+                    <form onSubmit={handleSaveUnipile} className="space-y-4 text-xs">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="font-mono uppercase text-[10px] text-zinc-400">
+                            Unipile API Key *
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                          >
+                            {showApiKey ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <input
+                          type={showApiKey ? 'text' : 'password'}
+                          required
+                          placeholder={unipileSettings?.api_key_masked ? `Stored: ${unipileSettings.api_key_masked}` : 'Enter your Unipile API key'}
+                          value={unipileApiKey}
+                          onChange={(e) => setUnipileApiKey(e.target.value)}
+                          className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1.5">
+                          Unipile Account ID (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. acc_01j7h8..."
+                          value={unipileAccountId}
+                          onChange={(e) => setUnipileAccountId(e.target.value)}
+                          className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
+                        />
+                        <p className="text-[10px] text-zinc-500 mt-1">
+                          Secondary identifier to route Unipile events directly to your account.
+                        </p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={unipileSaving}
+                        className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        {unipileSaving ? 'Saving to Database...' : 'Save Configuration'}
+                      </button>
+                    </form>
                   </div>
-                ) : (
-                  <div className="divide-y divide-zinc-800/80 max-h-[360px] overflow-y-auto pr-1">
-                    {inboundEmails.map((mail) => (
-                      <div key={mail.id} className="py-3 text-xs space-y-1">
-                        <div className="flex items-center justify-between text-zinc-200">
-                          <span className="font-semibold text-zinc-100 truncate">
-                            {mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email}
-                          </span>
-                          <span className="text-[10px] font-mono text-zinc-500 shrink-0 ml-2">
-                            {new Date(mail.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <div className="text-zinc-300 font-medium truncate">
-                          {mail.subject}
-                        </div>
-                        {mail.snippet && (
-                          <div className="text-[11px] text-zinc-500 line-clamp-2 font-mono">
-                            {mail.snippet}
+                </div>
+              )}
+
+              {/* =========================================================================
+                  EMAIL DETAIL VIEWER MODAL ("ON OPENING SHOW FROM UNIPILE")
+              ========================================================================= */}
+              {selectedEmail && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+                    {/* Modal Top Bar */}
+                    <div className="p-4 sm:p-5 border-b border-zinc-800/80 bg-zinc-950/70 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                                selectedEmail.reply_status === 'auto_replied'
+                                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
+                                  : selectedEmail.reply_status === 'ignored'
+                                  ? 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+                                  : 'bg-indigo-950/50 text-indigo-300 border-indigo-800/60'
+                              }`}
+                            >
+                              {selectedEmail.reply_status}
+                            </span>
+                            <span className="text-[10px] font-mono text-zinc-500">
+                              {new Date(selectedEmail.created_at).toLocaleString()}
+                            </span>
                           </div>
-                        )}
-                        <div className="flex items-center gap-2 pt-1 text-[10px] font-mono">
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60">
-                            {mail.reply_status}
+                          <h2 className="text-base sm:text-lg font-bold text-zinc-100 break-words">
+                            {selectedEmail.subject || '(No Subject)'}
+                          </h2>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEmail(null);
+                            setSelectedEmailLive(null);
+                          }}
+                          className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                          title="Close (Esc)"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* Sender & Recipient Metadata */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono pt-1">
+                        <div className="flex items-center gap-1.5 text-zinc-300 truncate">
+                          <span className="text-zinc-500 uppercase text-[10px]">From:</span>
+                          <span className="font-semibold text-zinc-200 truncate">
+                            {selectedEmail.from_name || selectedEmail.from_email}
                           </span>
-                          {mail.account_id && (
-                            <span className="text-zinc-500">Account: {mail.account_id}</span>
+                          {selectedEmail.from_email && selectedEmail.from_name && (
+                            <span className="text-zinc-400 text-[11px] truncate">
+                              &lt;{selectedEmail.from_email}&gt;
+                            </span>
                           )}
                         </div>
+
+                        <div className="flex items-center gap-1.5 text-zinc-400 truncate">
+                          <span className="text-zinc-500 uppercase text-[10px]">To:</span>
+                          <span className="truncate">{selectedEmail.to_email || 'Connected Mailbox'}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-zinc-400 sm:col-span-2 text-[11px]">
+                          <span className="text-zinc-500 uppercase text-[10px]">Unipile ID:</span>
+                          <span className="text-zinc-300 truncate">{selectedEmail.message_id || selectedEmail.id}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedEmail.message_id || selectedEmail.id);
+                              setCopiedDetailId(true);
+                              setTimeout(() => setCopiedDetailId(false), 2000);
+                            }}
+                            className="text-[10px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                          >
+                            {copiedDetailId ? 'Copied' : 'Copy ID'}
+                          </button>
+                        </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Modal Sub-Tabs */}
+                    <div className="flex items-center gap-2 px-5 pt-3 border-b border-zinc-800/80 bg-zinc-950/40 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setEmailViewerTab('body')}
+                        className={`pb-2 px-2 font-medium border-b-2 transition-all cursor-pointer ${
+                          emailViewerTab === 'body'
+                            ? 'border-indigo-500 text-indigo-400'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        Formatted Email (Saved)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEmailViewerTab('unipile')}
+                        className={`pb-2 px-2 font-medium border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                          emailViewerTab === 'unipile'
+                            ? 'border-indigo-500 text-indigo-400'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span>Show from Unipile (Live API)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEmailViewerTab('raw')}
+                        className={`pb-2 px-2 font-medium border-b-2 transition-all cursor-pointer ${
+                          emailViewerTab === 'raw'
+                            ? 'border-indigo-500 text-indigo-400'
+                            : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        Raw Webhook Payload
+                      </button>
+                    </div>
+
+                    {/* Modal Body */}
+                    <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                      {/* VIEW A: FORMATTED EMAIL */}
+                      {emailViewerTab === 'body' && (
+                        <div className="space-y-4">
+                          {selectedEmail.snippet && (
+                            <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 text-xs font-mono text-zinc-400">
+                              <span className="uppercase text-[10px] text-zinc-500 block mb-1">Snippet Preview</span>
+                              {selectedEmail.snippet}
+                            </div>
+                          )}
+
+                          <div>
+                            <span className="uppercase text-[10px] font-mono text-zinc-500 block mb-1.5">
+                              Message Content
+                            </span>
+                            <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-xs sm:text-sm text-zinc-200 leading-relaxed font-sans whitespace-pre-wrap select-text max-h-[380px] overflow-y-auto">
+                              {selectedEmail.body || selectedEmail.snippet || '(Email has no plain body text)'}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* VIEW B: SHOW FROM UNIPILE (LIVE) */}
+                      {emailViewerTab === 'unipile' && (
+                        <div className="space-y-4">
+                          {loadingEmailDetail ? (
+                            <div className="p-12 text-center space-y-3 font-mono text-xs text-zinc-400">
+                              <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto" />
+                              <p>Querying Unipile API endpoint https://api.unipile.com/api/v1/emails/{selectedEmail.message_id || selectedEmail.id}...</p>
+                            </div>
+                          ) : selectedEmailLive ? (
+                            <div className="space-y-3">
+                              <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs font-mono text-emerald-300 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                  Live Synced with Unipile API
+                                </span>
+                                <span className="text-[10px] text-zinc-400">
+                                  Provider: {selectedEmailLive.provider || 'Unipile'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs font-mono p-3 bg-zinc-950 rounded-lg border border-zinc-800">
+                                <div>
+                                  <span className="text-zinc-500 text-[10px] block">Unipile Message ID:</span>
+                                  <span className="text-zinc-200 truncate block">{selectedEmailLive.id || selectedEmail.message_id}</span>
+                                </div>
+                                <div>
+                                  <span className="text-zinc-500 text-[10px] block">Unipile Account:</span>
+                                  <span className="text-zinc-200 truncate block">{selectedEmailLive.account_id || selectedEmail.account_id || 'Connected'}</span>
+                                </div>
+                                {selectedEmailLive.folders && (
+                                  <div className="col-span-2">
+                                    <span className="text-zinc-500 text-[10px] block">Folders / Labels:</span>
+                                    <div className="flex gap-1 flex-wrap mt-0.5">
+                                      {(Array.isArray(selectedEmailLive.folders) ? selectedEmailLive.folders : [selectedEmailLive.folders]).map((f: any, idx: number) => (
+                                        <span key={idx} className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-300">
+                                          {typeof f === 'string' ? f : f?.name || JSON.stringify(f)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div>
+                                <span className="uppercase text-[10px] font-mono text-zinc-500 block mb-1.5">
+                                  Live Message Body
+                                </span>
+                                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-xs sm:text-sm text-zinc-200 leading-relaxed font-sans whitespace-pre-wrap select-text max-h-[340px] overflow-y-auto">
+                                  {selectedEmailLive.body || selectedEmailLive.text || selectedEmail.body || '(Empty body returned by Unipile)'}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                  <span>Unipile Webhook Storage Verified</span>
+                                </div>
+                                <p className="text-xs text-zinc-400 leading-relaxed">
+                                  This email was received via the Unipile webhook and its complete contents are persisted in the database.
+                                  {unipileSettings?.api_key_masked
+                                    ? ' Live Unipile API synchronization was checked against https://api.unipile.com/api/v1/emails.'
+                                    : ' To query live headers from Unipile, make sure your Unipile API key is saved in the Webhook & Credentials tab.'}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEmail(selectedEmail)}
+                                  className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5 mt-2"
+                                >
+                                  <IconRefresh className="w-3.5 h-3.5" />
+                                  <span>Refetch from Unipile</span>
+                                </button>
+                              </div>
+
+                              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-xs sm:text-sm text-zinc-200 leading-relaxed font-sans whitespace-pre-wrap select-text max-h-[300px] overflow-y-auto">
+                                {selectedEmail.body || selectedEmail.snippet || '(No body text)'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* VIEW C: RAW WEBHOOK PAYLOAD */}
+                      {emailViewerTab === 'raw' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+                            <span>PostgreSQL Stored JSONB Payload</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(JSON.stringify(selectedEmail.raw_payload || selectedEmail, null, 2));
+                                setCopiedBody(true);
+                                setTimeout(() => setCopiedBody(false), 2000);
+                              }}
+                              className="text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                            >
+                              {copiedBody ? 'Copied' : 'Copy JSON'}
+                            </button>
+                          </div>
+                          <pre className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 font-mono text-[11px] text-emerald-400 overflow-x-auto max-h-[380px] select-all leading-relaxed">
+                            {JSON.stringify(selectedEmail.raw_payload || selectedEmail, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="p-4 border-t border-zinc-800/80 bg-zinc-950/70 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedEmail.body || selectedEmail.snippet || '');
+                          setCopiedBody(true);
+                          setTimeout(() => setCopiedBody(false), 2000);
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {copiedBody ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
+                        <span>{copiedBody ? 'Copied to Clipboard' : 'Copy Email Body'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmail(null);
+                          setSelectedEmailLive(null);
+                        }}
+                        className="px-4 py-1.5 rounded-lg bg-zinc-100 text-zinc-950 hover:bg-white text-xs font-medium transition-colors cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2816,7 +3739,392 @@ Example:
           )}
 
           {/* =========================================================================
-              VIEW 6: ACCOUNT SETTINGS
+              VIEW 6: BILLING, PLANS & INVOICES (STRIPE INTEGRATION)
+          ========================================================================= */}
+          {currentSection === 'billing' && (
+            <div className="space-y-8 max-w-5xl">
+              {/* Alert Feedback */}
+              {billingFeedback && (
+                <div
+                  className={`p-4 rounded-xl text-xs font-mono flex items-center justify-between shadow-lg ${
+                    billingFeedback.error
+                      ? 'bg-rose-950/50 border border-rose-900/80 text-rose-300'
+                      : 'bg-emerald-950/50 border border-emerald-900/80 text-emerald-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>{billingFeedback.text}</span>
+                  </div>
+                  <button onClick={() => setBillingFeedback(null)} className="hover:text-white cursor-pointer ml-4">
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Header Title Section */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-zinc-800/80">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
+                      Billing, Plans & Invoices
+                    </h1>
+                    {hasActiveSubscription ? (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Active Subscription ({billingStatus?.subscription?.plan_name || 'Paid'})
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        Unpaid — Features Locked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Manage your subscription plan, view payment due dates, and track historical Stripe invoices.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { if (token) loadBillingData(token); }}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <IconRefresh className="w-3.5 h-3.5" />
+                    <span>Refresh Status</span>
+                  </button>
+
+                  {billingStatus?.subscription?.stripe_customer_id && (
+                    <button
+                      onClick={handleOpenCustomerPortal}
+                      disabled={checkoutLoading === 'portal'}
+                      className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 text-zinc-200 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      {checkoutLoading === 'portal' ? 'Opening...' : 'Stripe Customer Portal ↗'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Status & Payment Due Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card 1: Current Plan */}
+                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Plan</span>
+                  <div className="text-lg font-bold text-zinc-100 truncate">
+                    {billingStatus?.subscription?.plan_name || 'Unpaid (Free Tier)'}
+                  </div>
+                  <div className="text-[11px] font-mono text-zinc-400">
+                    {hasActiveSubscription
+                      ? `$${((billingStatus?.subscription?.amount || 0) / 100).toFixed(2)} / ${billingStatus?.subscription?.interval || 'month'}`
+                      : '$0.00 / month'}
+                  </div>
+                </div>
+
+                {/* Card 2: Next Payment Due */}
+                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Payment Due / Renewal</span>
+                  <div className="text-base font-semibold text-zinc-100 truncate">
+                    {billingStatus?.subscription?.current_period_end
+                      ? new Date(billingStatus.subscription.current_period_end).toLocaleDateString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : 'Immediate'}
+                  </div>
+                  <div className="text-[11px] font-mono">
+                    {isPastDue ? (
+                      <span className="text-rose-400">⚠️ Payment overdue</span>
+                    ) : hasActiveSubscription ? (
+                      <span className="text-emerald-400">Auto-renews via Stripe</span>
+                    ) : (
+                      <span className="text-amber-400">Select a plan below</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card 3: Unipile & Chatbot Status */}
+                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Automation Gating</span>
+                  <div className="text-base font-semibold text-zinc-100 truncate flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${hasActiveSubscription ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                    <span>{hasActiveSubscription ? 'Unlocked & Active' : 'Locked (Unpaid)'}</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-zinc-400">
+                    {hasActiveSubscription ? 'Unipile + Chatbot active' : 'Payment required to add'}
+                  </div>
+                </div>
+
+                {/* Card 4: Stripe Gateway */}
+                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Payment Processor</span>
+                  <div className="text-base font-semibold text-zinc-100 truncate flex items-center gap-1.5">
+                    <span>Stripe Checkout</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-emerald-400">
+                    256-bit SSL Encrypted
+                  </div>
+                </div>
+              </div>
+
+              {/* Plans Selection Section */}
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
+                    Select a Plan to Unlock Automated Email & Chatbots
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Choose the plan that fits your volume. You can pay via Stripe hosted checkout or use test activation.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {(billingStatus?.plans && billingStatus.plans.length > 0
+                    ? billingStatus.plans
+                    : [
+                        {
+                          id: 'starter',
+                          name: 'Starter Plan',
+                          price: 19,
+                          amount: 1900,
+                          interval: 'month',
+                          description: 'For solo founders launching their first automated customer chatbot.',
+                          features: [
+                            '1 Company profile',
+                            'Up to 10 PDF Documents in Pinecone',
+                            'Website Chatbot 1-Line Embed Script',
+                            'Dedicated Unipile Webhook Listener',
+                            'Basic Inbound Email Ingest',
+                            'Standard Gemini 1.5 Flash Model',
+                          ],
+                          popular: false,
+                        },
+                        {
+                          id: 'pro',
+                          name: 'Pro Automation',
+                          price: 49,
+                          amount: 4900,
+                          interval: 'month',
+                          description: 'For growing teams requiring robust email automation and multi-company chatbots.',
+                          features: [
+                            'Unlimited Company Profiles',
+                            'Unlimited PDF Knowledge Base Vector Storage',
+                            'Custom Multi-Tenant Chatbot API Keys',
+                            'AI Email Auto-Responder with Rule Engine',
+                            'Live Unipile API Synchronization & Viewer',
+                            'High-Speed Gemini 2.0 Flash Inference',
+                            'Priority Email Support',
+                          ],
+                          popular: true,
+                        },
+                        {
+                          id: 'enterprise',
+                          name: 'Enterprise Scale',
+                          price: 99,
+                          amount: 9900,
+                          interval: 'month',
+                          description: 'High throughput, guaranteed SLAs, and dedicated webhook processing pipelines.',
+                          features: [
+                            'Everything in Pro, without usage caps',
+                            'Dedicated Webhook Concurrency & Retries',
+                            'Multi-Model Fallbacks & Custom Timeout Logic',
+                            '99.9% Uptime SLA Guarantee',
+                            'Custom Knowledge Base Partitioning',
+                            '24/7 Dedicated Support',
+                          ],
+                          popular: false,
+                        },
+                      ]
+                  ).map((plan: any) => {
+                    const isCurrentPlan = billingStatus?.subscription?.plan_id === plan.id && hasActiveSubscription;
+                    return (
+                      <div
+                        key={plan.id}
+                        className={`p-6 rounded-2xl flex flex-col justify-between transition-all relative ${
+                          plan.popular
+                            ? 'bg-zinc-900 border-2 border-indigo-500/80 shadow-2xl shadow-indigo-500/10'
+                            : 'bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700'
+                        }`}
+                      >
+                        {plan.popular && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-indigo-600 text-[10px] font-mono uppercase tracking-wider text-white font-semibold">
+                            Most Popular
+                          </div>
+                        )}
+
+                        <div className="space-y-4">
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-base font-bold text-zinc-100">{plan.name}</h3>
+                              {isCurrentPlan && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/80">
+                                  Current Plan
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{plan.description}</p>
+                          </div>
+
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-3xl font-extrabold text-white">${plan.price}</span>
+                            <span className="text-xs font-mono text-zinc-400">/ {plan.interval}</span>
+                          </div>
+
+                          <div className="border-t border-zinc-800/80 pt-4 space-y-2">
+                            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block">
+                              What&apos;s Included:
+                            </span>
+                            <ul className="space-y-2 text-xs text-zinc-300">
+                              {plan.features.map((feature: string, idx: number) => (
+                                <li key={idx} className="flex items-start gap-2">
+                                  <IconCheck className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                  <span className="leading-snug">{feature}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div className="pt-6 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSubscribePlan(plan.id)}
+                            disabled={checkoutLoading === plan.id}
+                            className={`w-full py-2.5 rounded-xl font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                              plan.popular
+                                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25'
+                                : 'bg-zinc-100 hover:bg-white text-zinc-950'
+                            }`}
+                          >
+                            <IconCreditCard className="w-4 h-4" />
+                            <span>
+                              {checkoutLoading === plan.id
+                                ? 'Redirecting to Stripe...'
+                                : isCurrentPlan
+                                ? 'Renew Plan with Stripe'
+                                : `Pay $${plan.price} with Stripe`}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleQuickTestPayment(plan.id)}
+                            disabled={checkoutLoading === `test_${plan.id}`}
+                            className="w-full py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-mono transition-colors cursor-pointer"
+                            title="Instantly unlocks features in database test mode"
+                          >
+                            {checkoutLoading === `test_${plan.id}` ? 'Activating...' : '⚡ Instant Test Activate'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Past Payments & Invoices Table */}
+              <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/80 overflow-hidden space-y-0">
+                <div className="p-4 sm:p-5 border-b border-zinc-800/80 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100">
+                      Payment History & Invoices
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      All historical Stripe transactions, invoices, and payment receipts.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono text-zinc-500">
+                    {paymentHistory.length} transaction{paymentHistory.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {paymentHistory.length === 0 ? (
+                  <div className="p-10 text-center space-y-2">
+                    <div className="w-10 h-10 rounded-full bg-zinc-800 text-zinc-400 mx-auto flex items-center justify-center">
+                      <IconCreditCard className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs font-medium text-zinc-300">No Payment History Yet</div>
+                    <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                      Whenever you pay for a plan via Stripe Checkout, the transaction confirmation and invoice PDF will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-zinc-950/60 text-zinc-400 border-b border-zinc-800 uppercase text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4">Invoice / ID</th>
+                          <th className="py-3 px-4">Plan</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Date</th>
+                          <th className="py-3 px-4 text-right">Receipt</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800/80 text-zinc-300">
+                        {paymentHistory.map((pmt) => (
+                          <tr key={pmt.id} className="hover:bg-zinc-800/30 transition-colors">
+                            <td className="py-3 px-4 font-mono text-[11px] text-zinc-400 truncate max-w-[150px]">
+                              {pmt.stripe_invoice_id || pmt.stripe_payment_intent_id || pmt.id}
+                            </td>
+                            <td className="py-3 px-4 font-sans font-medium text-zinc-200">
+                              {pmt.plan_name || 'Automation Plan'}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-zinc-100">
+                              ${((pmt.amount || 0) / 100).toFixed(2)} {pmt.currency.toUpperCase()}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded border ${
+                                  pmt.status === 'paid'
+                                    ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60'
+                                    : pmt.status === 'failed'
+                                    ? 'bg-rose-950/60 text-rose-400 border-rose-800/60'
+                                    : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+                                }`}
+                              >
+                                {pmt.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-zinc-400 text-[11px]">
+                              {pmt.paid_at
+                                ? new Date(pmt.paid_at).toLocaleString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : new Date(pmt.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {pmt.receipt_url || pmt.invoice_pdf ? (
+                                <a
+                                  href={pmt.receipt_url || pmt.invoice_pdf}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-400 hover:text-indigo-300 underline font-sans text-xs inline-flex items-center gap-1"
+                                >
+                                  <span>View</span>
+                                  <span className="text-[10px]">↗</span>
+                                </a>
+                              ) : (
+                                <span className="text-zinc-600 text-[11px]">System Record</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              VIEW 7: ACCOUNT SETTINGS
           ========================================================================= */}
           {currentSection === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl">

@@ -98,7 +98,66 @@ export interface InboundEmailItem {
   body?: string;
   reply_status: string;
   reply_text?: string;
+  raw_payload?: any;
   created_at: string;
+}
+
+export interface BillingPlanItem {
+  id: string;
+  name: string;
+  price: number;
+  amount: number;
+  currency: string;
+  interval: string;
+  description: string;
+  features: string[];
+  popular?: boolean;
+}
+
+export interface UserSubscription {
+  id: string;
+  user_id: string;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  plan_id: string;
+  plan_name: string;
+  amount: number;
+  currency: string;
+  interval: string;
+  status: 'active' | 'past_due' | 'canceled' | 'inactive' | 'trialing' | 'unpaid';
+  current_period_start?: string;
+  current_period_end?: string;
+  cancel_at_period_end?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PaymentItem {
+  id: string;
+  user_id: string;
+  stripe_payment_intent_id?: string;
+  stripe_invoice_id?: string;
+  amount: number; // in cents
+  currency: string;
+  status: 'paid' | 'pending' | 'failed' | 'refunded';
+  plan_id?: string;
+  plan_name?: string;
+  receipt_url?: string;
+  invoice_pdf?: string;
+  failure_reason?: string;
+  paid_at?: string;
+  created_at: string;
+}
+
+export interface BillingStatusResponse {
+  success: boolean;
+  hasActiveSubscription: boolean;
+  status: string;
+  subscription?: UserSubscription | null;
+  paymentDue?: string | null;
+  isPastDue: boolean;
+  plans: BillingPlanItem[];
+  error?: string;
 }
 
 /**
@@ -642,6 +701,151 @@ export async function fetchInboundEmails(token: string): Promise<{
   try {
     const res = await fetch(`${API_BASE}/api/email/inbound`, {
       headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function fetchInboundEmailById(
+  id: string,
+  token: string
+): Promise<{
+  success: boolean;
+  email?: InboundEmailItem;
+  unipileLive?: any;
+  unipileNote?: string;
+  source?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE}/api/email/inbound/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function simulateInboundEmail(
+  data: { from_name?: string; from_email?: string; subject?: string; body?: string },
+  token: string
+): Promise<{ success: boolean; email?: InboundEmailItem; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/email/simulate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Fetch subscription status and available plans
+ */
+export async function fetchBillingStatus(token: string): Promise<BillingStatusResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/status`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      hasActiveSubscription: false,
+      status: 'unpaid',
+      isPastDue: false,
+      plans: [],
+      error: err.message || 'Connection error',
+    };
+  }
+}
+
+/**
+ * Fetch past payments and invoices history
+ */
+export async function fetchPaymentHistory(
+  token: string
+): Promise<{ success: boolean; payments?: PaymentItem[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/history`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Create Stripe Checkout Session
+ */
+export async function createCheckoutSession(
+  planId: string,
+  token: string
+): Promise<{ success: boolean; url?: string; sessionId?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/create-checkout-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ planId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Create Stripe Customer Portal Session
+ */
+export async function createCustomerPortal(
+  token: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/create-portal-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Simulate or Test Payment Success directly (Instant Sandbox Activation)
+ */
+export async function simulatePaymentSuccess(
+  planId: string,
+  token: string
+): Promise<{ success: boolean; subscription?: UserSubscription; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/simulate-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ planId }),
     });
     return await res.json();
   } catch (err: any) {
