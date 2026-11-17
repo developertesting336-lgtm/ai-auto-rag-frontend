@@ -1664,6 +1664,63 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Middle: 7-Day Free Trial Live Countdown Pill */}
+          {isTrialActive && !isPaid && (
+            <div className="flex items-center gap-2 sm:gap-2.5 px-3 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-indigo-950/80 via-zinc-900 to-purple-950/80 border border-indigo-500/40 shadow-sm text-xs font-mono">
+              <div className="flex items-center gap-1.5 text-indigo-300 font-semibold text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse shrink-0" />
+                <span className="hidden sm:inline">7-Day Free Trial:</span>
+                <span className="sm:hidden">Trial:</span>
+              </div>
+
+              {/* Digital Live Ticking Clock */}
+              <div className="flex items-center gap-1 font-bold text-[11px] text-white tracking-wider">
+                <span className="bg-zinc-950/90 px-1.5 py-0.5 rounded border border-indigo-500/30 text-indigo-300">
+                  {trialCountdown.days}d
+                </span>
+                <span className="text-zinc-600">:</span>
+                <span className="bg-zinc-950/90 px-1.5 py-0.5 rounded border border-indigo-500/30 text-indigo-300">
+                  {String(trialCountdown.hours).padStart(2, '0')}h
+                </span>
+                <span className="text-zinc-600">:</span>
+                <span className="bg-zinc-950/90 px-1.5 py-0.5 rounded border border-indigo-500/30 text-indigo-300">
+                  {String(trialCountdown.minutes).padStart(2, '0')}m
+                </span>
+                <span className="text-zinc-600">:</span>
+                <span className="bg-zinc-950/90 px-1.5 py-0.5 rounded border border-indigo-500/30 text-indigo-400">
+                  {String(trialCountdown.seconds).padStart(2, '0')}s
+                </span>
+              </div>
+
+              <span className="text-zinc-600 text-[10px] hidden sm:inline">•</span>
+
+              <button
+                type="button"
+                onClick={() => setCurrentSection('billing')}
+                className="text-[10px] font-semibold text-indigo-300 hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+                title="View subscription plans"
+              >
+                Upgrade Plan →
+              </button>
+            </div>
+          )}
+
+          {/* If Trial Expired */}
+          {isTrialExpired && !isPaid && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs font-mono shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+              <span className="text-[11px] font-semibold">Trial Expired</span>
+              <span className="text-zinc-600">•</span>
+              <button
+                type="button"
+                onClick={() => setCurrentSection('billing')}
+                className="text-[10px] font-semibold text-rose-300 hover:text-white underline underline-offset-2 cursor-pointer"
+              >
+                Upgrade to Unlock →
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             {/* Multi-Company / Chatbot Switcher Dropdown */}
             <div className="relative">
@@ -1735,89 +1792,6 @@ export default function DashboardPage() {
 
         {/* Dynamic Page Content */}
         <main className="flex-1 p-6 sm:p-8 max-w-6xl w-full mx-auto space-y-8">
-          {/* Global 7-Day Free Trial Active Live Countdown Banner */}
-          {isTrialActive && !isPaid && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-zinc-900 to-purple-950/60 border border-indigo-500/40 text-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xl shadow-indigo-950/20">
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold shrink-0 text-lg">
-                  ⏳
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-sm text-white">7-Day Free Trial Active</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium">
-                      $0.00 Charged • Full Access
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed max-w-xl">
-                    Website Chatbot, Unipile Email Automation, and Pinecone Policy Vector DB are 100% active. After your 1-week trial ends, select a plan to maintain uninterrupted service.
-                  </p>
-                </div>
-              </div>
-
-              {/* Digital Countdown Timer Box */}
-              <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
-                <div className="flex items-center gap-1.5 sm:gap-2 bg-zinc-950/90 border border-indigo-500/40 rounded-xl px-3 py-2 font-mono shadow-inner">
-                  <div className="text-center px-1.5 min-w-[32px]">
-                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{trialCountdown.days}</span>
-                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Days</span>
-                  </div>
-                  <span className="text-indigo-400 font-bold text-sm">:</span>
-                  <div className="text-center px-1.5 min-w-[32px]">
-                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{String(trialCountdown.hours).padStart(2, '0')}</span>
-                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Hours</span>
-                  </div>
-                  <span className="text-indigo-400 font-bold text-sm">:</span>
-                  <div className="text-center px-1.5 min-w-[32px]">
-                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{String(trialCountdown.minutes).padStart(2, '0')}</span>
-                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Mins</span>
-                  </div>
-                  <span className="text-indigo-400 font-bold text-sm">:</span>
-                  <div className="text-center px-1.5 min-w-[32px]">
-                    <span className="text-base sm:text-lg font-bold text-indigo-400 block leading-none">{String(trialCountdown.seconds).padStart(2, '0')}</span>
-                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Secs</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentSection('billing')}
-                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-md shadow-indigo-600/30 cursor-pointer shrink-0"
-                >
-                  View Plans →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Global Trial Expired Banner */}
-          {isTrialExpired && !isPaid && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-rose-950/30 border border-rose-800/70 text-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xl">
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-bold shrink-0">
-                  <IconLock className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-rose-200">7-Day Free Trial Has Ended</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/60 font-medium">
-                      Features Locked (Unpaid)
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed max-w-xl">
-                    Your 1-week free trial has expired. AI Chatbot queries, Unipile email sync, and policy document uploads are locked. Upgrade to an active plan below to resume.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCurrentSection('billing')}
-                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-all shadow-md shadow-rose-600/30 cursor-pointer shrink-0 self-start md:self-auto"
-              >
-                Choose a Plan to Unlock →
-              </button>
-            </div>
-          )}
           {/* =========================================================================
               VIEW 1: OVERVIEW (MODERN EXECUTIVE SUMMARY)
           ========================================================================= */}
