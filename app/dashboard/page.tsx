@@ -2549,7 +2549,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between text-zinc-400">
                       <span className="text-zinc-500">Default Model</span>
                       <span className="text-emerald-400">
-                        {aiModels[0]?.name || 'Gemini 2.0 Flash'}
+                        {aiModels[0]?.name || 'Gemini 3.8 Flash'}
                       </span>
                     </div>
                   </div>
@@ -3677,7 +3677,7 @@ export default function DashboardPage() {
                               {camp.status === 'active' ? '● Active' : '○ Paused'}
                             </span>
                             <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-zinc-950 border border-zinc-800 text-indigo-300">
-                              🤖 {camp.ai_model_name || 'Gemini 2.0 Flash'}
+                              🤖 {camp.ai_model_name || 'Gemini 3.8 Flash'}
                             </span>
                           </div>
                           {camp.description && (
@@ -3884,7 +3884,7 @@ export default function DashboardPage() {
                           onChange={(e) => setCampaignForm({ ...campaignForm, ai_model_id: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
                         >
-                          <option value="">Default Gemini 2.0 Flash</option>
+                          <option value="">Default Gemini 3.8 Flash</option>
                           {aiModels.map((m) => (
                             <option key={m.id} value={m.id}>
                               {m.name} ({m.provider.toUpperCase()})
@@ -5368,7 +5368,7 @@ export default function DashboardPage() {
                             'Custom Multi-Tenant Chatbot API Keys',
                             'AI Email Auto-Responder with Rule Engine',
                             'Live Unipile API Synchronization & Viewer',
-                            'High-Speed Gemini 2.0 Flash Inference',
+                            'High-Speed Gemini 3.8 Flash Inference',
                             'Priority Email Support',
                           ],
                           popular: true,

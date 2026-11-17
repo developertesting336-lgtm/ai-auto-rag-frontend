@@ -44,7 +44,7 @@ export default function AiPlaygroundPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="p-6 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
             <div className="text-emerald-400 font-mono text-xs font-bold uppercase">Sub-200ms Latency</div>
-            <h3 className="text-sm font-bold text-zinc-100">Gemini 2.0 & 1.5 Flash</h3>
+            <h3 className="text-sm font-bold text-zinc-100">Gemini 3.8 & Flash Lite</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
               Ultra-fast generation speeds suitable for real-time customer chatbots, classification pipelines, and inline autocompletions.
             </p>
@@ -76,7 +76,7 @@ export default function AiPlaygroundPage() {
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
               <span className="text-xs font-mono text-zinc-400 ml-2">playground-console.ts</span>
             </div>
-            <span className="text-[11px] font-mono text-emerald-400">gemini-2.0-flash • 142ms</span>
+            <span className="text-[11px] font-mono text-emerald-400">gemini-3.8-flash • 142ms</span>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
