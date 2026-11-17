@@ -1249,3 +1249,165 @@ export const AuthStorage = {
     localStorage.removeItem('auth_user');
   },
 };
+
+// ============================================================================
+// HEALTH & PUSH NOTIFICATIONS API
+// ============================================================================
+
+export interface ModelHealthItem {
+  id: string;
+  name: string;
+  provider: string;
+  model_name?: string;
+  key_hint: string;
+  temperature?: string | number;
+  is_active: boolean;
+  created_at: string;
+  health: {
+    status: 'healthy' | 'error' | 'untested';
+    latency_ms: number | null;
+    error_message: string | null;
+    check_type: string | null;
+    last_checked: string | null;
+  };
+}
+
+export interface HealthLogItem {
+  id: string;
+  model_id: string;
+  status: 'healthy' | 'error';
+  latency_ms: number;
+  error_message: string | null;
+  check_type: string;
+  created_at: string;
+}
+
+export interface UserNotificationItem {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  data?: any;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface HealthOverviewData {
+  overall_status: 'operational' | 'degraded';
+  total_models: number;
+  healthy_count: number;
+  failing_count: number;
+  untested_count: number;
+  last_check_time: string | null;
+  interval_hours: number;
+  models: ModelHealthItem[];
+  recent_logs: HealthLogItem[];
+  unread_alerts_count: number;
+}
+
+export async function fetchHealthOverview(
+  token: string
+): Promise<{ success: boolean; data?: HealthOverviewData; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/overview`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to fetch health telemetry' };
+  }
+}
+
+export async function runHealthCheckNow(
+  token: string
+): Promise<{ success: boolean; message?: string; outcome?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/run-check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to run health check' };
+  }
+}
+
+export async function checkSingleModelHealth(
+  modelId: string,
+  token: string
+): Promise<{ success: boolean; outcome?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/check/${modelId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to test model health' };
+  }
+}
+
+export async function fetchUserNotifications(
+  token: string
+): Promise<{ success: boolean; notifications?: UserNotificationItem[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/notifications`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to fetch notifications' };
+  }
+}
+
+export async function markNotificationsAsRead(
+  token: string,
+  id?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/notifications/mark-read`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ id }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to mark read' };
+  }
+}
+
+export async function sendTestNotificationApi(
+  token: string
+): Promise<{ success: boolean; message?: string; notification?: UserNotificationItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health/notifications/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to send test notification' };
+  }
+}

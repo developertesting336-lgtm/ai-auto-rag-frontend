@@ -66,7 +66,25 @@ import {
   InboundEmailItem,
   ApiKeyItem,
   API_BASE,
+  fetchHealthOverview,
+  runHealthCheckNow,
+  checkSingleModelHealth,
+  fetchUserNotifications,
+  markNotificationsAsRead,
+  sendTestNotificationApi,
+  HealthOverviewData,
+  ModelHealthItem,
+  HealthLogItem,
+  UserNotificationItem,
 } from '../../lib/api';
+
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  showPushNotification,
+  NotificationPermissionState,
+} from '../../lib/pushNotification';
 
 // ============================================================================
 // Fixed-Size SVG Icons (Strict 16x16 / 18x18 - Cannot Stretch)
@@ -522,7 +540,67 @@ function IconCpu({ className = '' }: { className?: string }) {
   );
 }
 
-type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'models' | 'apikeys' | 'billing' | 'settings';
+function IconActivity({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+
+function IconBell({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function IconAlertTriangle({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'models' | 'health' | 'apikeys' | 'billing' | 'settings';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -596,6 +674,17 @@ export default function DashboardPage() {
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<EmailCampaignItem | null>(null);
   const [campaignToDelete, setCampaignToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  // Health & Push Notification state
+  const [healthData, setHealthData] = useState<HealthOverviewData | null>(null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
+  const [checkingAllModels, setCheckingAllModels] = useState(false);
+  const [checkingModelId, setCheckingModelId] = useState<string | null>(null);
+  const [notificationsList, setNotificationsList] = useState<UserNotificationItem[]>([]);
+  const [pushPermission, setPushPermission] = useState<NotificationPermissionState>('default');
+  const [testingPush, setTestingPush] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const [deletingCampaign, setDeletingCampaign] = useState(false);
   const [campaignForm, setCampaignForm] = useState({
     name: '',
@@ -805,6 +894,8 @@ export default function DashboardPage() {
     loadAiModelsData(storedToken);
     loadApiKeys(storedToken);
     loadBillingData(storedToken);
+    loadHealthData(storedToken, true);
+    setPushPermission(getNotificationPermission());
 
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
@@ -823,6 +914,45 @@ export default function DashboardPage() {
       }
     }
   }, [router]);
+
+  // Background 60-second polling for real-time alerts and push dispatch
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(async () => {
+      try {
+        const notifsRes = await fetchUserNotifications(token);
+        if (notifsRes.success && notifsRes.notifications) {
+          const newAlerts = notifsRes.notifications.filter(
+            (n) => !n.is_read && !seenNotificationIdsRef.current.has(n.id)
+          );
+
+          if (newAlerts.length > 0) {
+            newAlerts.forEach((n) => {
+              seenNotificationIdsRef.current.add(n.id);
+              if (getNotificationPermission() === 'granted') {
+                showPushNotification(n.title, {
+                  body: n.message,
+                  tag: `alert-${n.id}`,
+                });
+              }
+            });
+            setNotificationsList(notifsRes.notifications);
+            setHealthData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    unread_alerts_count: prev.unread_alerts_count + newAlerts.length,
+                  }
+                : prev
+            );
+          }
+        }
+      } catch (e) {
+        // quiet error
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   const loadCompanyData = async (authToken: string, targetCompanyId?: string) => {
     const res = await getMyCompany(authToken);
@@ -1007,6 +1137,145 @@ export default function DashboardPage() {
       }
     } finally {
       setSavingAiModel(false);
+    }
+  };
+
+  const loadHealthData = async (authToken?: string, quiet = false) => {
+    const t = authToken || token;
+    if (!t) return;
+    if (!quiet) setLoadingHealth(true);
+    try {
+      const [overviewRes, notifsRes] = await Promise.all([
+        fetchHealthOverview(t),
+        fetchUserNotifications(t),
+      ]);
+      if (overviewRes.success && overviewRes.data) {
+        setHealthData(overviewRes.data);
+      }
+      if (notifsRes.success && notifsRes.notifications) {
+        setNotificationsList(notifsRes.notifications);
+        notifsRes.notifications.forEach((n) => seenNotificationIdsRef.current.add(n.id));
+      }
+    } catch (err) {
+      console.error('[Health] Failed to load telemetry:', err);
+    } finally {
+      if (!quiet) setLoadingHealth(false);
+    }
+  };
+
+  const handleRequestPushPermission = async () => {
+    if (!isNotificationSupported()) {
+      toast.error('Web Notifications are not supported in this browser.');
+      return;
+    }
+    const perm = await requestNotificationPermission();
+    setPushPermission(perm);
+    if (perm === 'granted') {
+      toast.success('Push notifications enabled! You will be alerted on any AI model errors.');
+      showPushNotification('AutoFlow Push Notifications Active', {
+        body: 'You will receive real-time alerts if any AI model fails the 1-hour health check.',
+        tag: 'autoflow-welcome',
+      });
+    } else if (perm === 'denied') {
+      toast.error('Notification permission was blocked in browser settings. Please enable notifications for this site.');
+    }
+  };
+
+  const handleRunHealthCheckNow = async () => {
+    if (!token) return;
+    setCheckingAllModels(true);
+    try {
+      const res = await runHealthCheckNow(token);
+      if (res.success) {
+        toast.success(res.message || 'Health check completed successfully!');
+        await loadHealthData(undefined, true);
+      } else {
+        toast.error(res.error || 'Health check ping failed.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error executing health check');
+    } finally {
+      setCheckingAllModels(false);
+    }
+  };
+
+  const handleCheckSingleModel = async (modelId: string) => {
+    if (!token) return;
+    setCheckingModelId(modelId);
+    try {
+      const res = await checkSingleModelHealth(modelId, token);
+      if (res.success && res.outcome) {
+        if (res.outcome.status === 'healthy') {
+          toast.success(`Ping passed! Latency: ${res.outcome.latency_ms}ms`);
+        } else {
+          toast.error(`Ping failed: ${res.outcome.error || 'Unknown error'}`);
+          if (pushPermission === 'granted') {
+            showPushNotification(`AI Model Alert: ${res.outcome.model_name || 'Model'} Error`, {
+              body: `Inference failed: ${res.outcome.error}`,
+              tag: `model-error-${modelId}`,
+            });
+          }
+        }
+        await loadHealthData(undefined, true);
+      } else {
+        toast.error(res.error || 'Failed to check model health');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error checking model health');
+    } finally {
+      setCheckingModelId(null);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    if (!token) return;
+    setMarkingRead(true);
+    try {
+      const res = await markNotificationsAsRead(token);
+      if (res.success) {
+        toast.success('All notifications marked as read.');
+        setNotificationsList((prev) => prev.map((n) => ({ ...n, is_read: true })));
+        if (healthData) {
+          setHealthData({ ...healthData, unread_alerts_count: 0 });
+        }
+      } else {
+        toast.error(res.error || 'Failed to mark read');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error marking notifications read');
+    } finally {
+      setMarkingRead(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    if (!token) return;
+    setTestingPush(true);
+    try {
+      const res = await sendTestNotificationApi(token);
+      if (res.success) {
+        toast.success('Test alert recorded in notification center!');
+        if (isNotificationSupported()) {
+          const currentPerm = getNotificationPermission();
+          if (currentPerm === 'granted') {
+            showPushNotification('AutoFlow AI Model Alert (Test)', {
+              body: 'This is a test notification confirming your browser push channel is operational.',
+              tag: 'test-push-' + Date.now(),
+            });
+          } else if (currentPerm === 'default') {
+            toast.info('Enable browser push permission below to receive desktop popups.');
+          } else {
+            toast.warning('Browser notification permission is blocked in your browser settings.');
+          }
+        }
+        await loadHealthData(undefined, true);
+      } else {
+        toast.error(res.error || 'Failed to trigger test notification');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error sending test notification');
+    } finally {
+      setTestingPush(false);
     }
   };
 
@@ -1834,6 +2103,34 @@ export default function DashboardPage() {
               </span>
             </button>
 
+            {/* System & AI Models Health */}
+            <button
+              onClick={() => {
+                setCurrentSection('health');
+                setSidebarOpen(false);
+              }}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center justify-between text-xs font-medium transition-colors cursor-pointer ${currentSection === 'health'
+                  ? 'bg-zinc-800 text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                }`}
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                  <IconActivity className={currentSection === 'health' ? 'text-zinc-100' : 'text-zinc-400'} />
+                </div>
+                <span className="truncate">System Health</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                {(healthData?.unread_alerts_count || 0) > 0 ? (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                    {healthData?.unread_alerts_count}
+                  </span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                )}
+              </div>
+            </button>
+
             <button
               onClick={() => {
                 setCurrentSection('billing');
@@ -2056,10 +2353,25 @@ export default function DashboardPage() {
             </div>
 
             {/* System status pill */}
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>System Operational</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentSection('health')}
+              className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-mono bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 transition-colors cursor-pointer"
+              title="View System & AI Model Health Telemetry"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  healthData?.overall_status === 'degraded'
+                    ? 'bg-rose-400 animate-pulse'
+                    : 'bg-emerald-400'
+                }`}
+              />
+              <span>
+                {healthData?.overall_status === 'degraded'
+                  ? 'Degraded (Action Needed)'
+                  : 'System Operational'}
+              </span>
+            </button>
           </div>
         </header>
 
@@ -4386,6 +4698,435 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {/* =========================================================================
+              VIEW: SYSTEM & AI MODEL HEALTH (1-HOUR TELEMETRY & PUSH NOTIFICATIONS)
+          ========================================================================= */}
+          {currentSection === 'health' && (
+            <div className="space-y-8 max-w-5xl">
+              {/* Header Title Section */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-zinc-800">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+                      System & AI Model Health
+                    </h1>
+                    <span
+                      className={`text-[11px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                        healthData?.overall_status === 'degraded'
+                          ? 'bg-rose-950/60 text-rose-300 border-rose-800/80'
+                          : 'bg-emerald-950/60 text-emerald-300 border-emerald-800/80'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          healthData?.overall_status === 'degraded'
+                            ? 'bg-rose-400 animate-pulse'
+                            : 'bg-emerald-400'
+                        }`}
+                      />
+                      <span>
+                        {healthData?.overall_status === 'degraded'
+                          ? 'Degraded: Errors Detected'
+                          : 'All Models Operational'}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
+                    Automated 1-hour health monitor tests all configured AI models for inference latency and API key validity. Real-time browser push notifications alert you immediately on errors.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    disabled={testingPush}
+                    className="h-8 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Send a sample push notification to verify permissions"
+                  >
+                    <IconBell className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{testingPush ? 'Sending...' : 'Test Push Alert'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRunHealthCheckNow}
+                    disabled={checkingAllModels}
+                    className="h-8 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    {checkingAllModels ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Checking Models...</span>
+                      </>
+                    ) : (
+                      <>
+                        <IconActivity className="w-3.5 h-3.5 text-indigo-200" />
+                        <span>Run Health Check Now</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Push Notification Permission Request Banner */}
+              {pushPermission === 'default' && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/70 via-zinc-900 to-indigo-950/70 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
+                      <IconBell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                        <span>Enable Real-Time Push Notifications</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300">Action Required</span>
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                        Allow browser notifications to receive immediate desktop alerts if any of your AI models fail their hourly health check or encounter quota errors.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRequestPushPermission}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shrink-0 transition-colors cursor-pointer shadow-md"
+                  >
+                    Allow Push Notifications
+                  </button>
+                </div>
+              )}
+
+              {pushPermission === 'denied' && (
+                <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-900/60 flex items-start gap-3 text-xs text-amber-200">
+                  <IconAlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-amber-300">Notifications Blocked:</span> Desktop push notifications are disabled in your browser preferences. To receive real-time failure alerts, open your browser site settings and allow notifications for this domain.
+                  </div>
+                </div>
+              )}
+
+              {pushPermission === 'granted' && (
+                <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-900/40 flex items-center justify-between text-xs text-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>Push Notifications Active: Authorized to deliver desktop alerts on AI model downtime.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 text-[11px] cursor-pointer"
+                  >
+                    Send Test Alert
+                  </button>
+                </div>
+              )}
+
+              {/* 4 Telemetry Metrics Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                    System Status
+                  </div>
+                  <div className="text-base font-semibold text-zinc-100 flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        healthData?.overall_status === 'degraded' ? 'bg-rose-400' : 'bg-emerald-400'
+                      }`}
+                    />
+                    <span>{healthData?.overall_status === 'degraded' ? 'Degraded' : 'Operational'}</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500">
+                    {healthData?.failing_count
+                      ? `${healthData.failing_count} model(s) failing`
+                      : 'All endpoints healthy'}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                    Monitored AI Models
+                  </div>
+                  <div className="text-base font-semibold text-zinc-100">
+                    {healthData?.total_models ?? aiModels.length} Configured
+                  </div>
+                  <div className="text-[11px] text-zinc-500 flex items-center gap-2 font-mono">
+                    <span className="text-emerald-400">{healthData?.healthy_count ?? 0} passing</span>
+                    <span>•</span>
+                    <span className="text-rose-400">{healthData?.failing_count ?? 0} failing</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                    Automated Cron Check
+                  </div>
+                  <div className="text-base font-semibold text-zinc-100 font-mono">
+                    Every 1 Hour
+                  </div>
+                  <div className="text-[11px] text-zinc-500 truncate">
+                    {healthData?.last_check_time
+                      ? `Last: ${new Date(healthData.last_check_time).toLocaleTimeString()}`
+                      : 'Background timer active'}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
+                    Push Alert Channel
+                  </div>
+                  <div className="text-base font-semibold text-zinc-100 flex items-center gap-1.5">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        pushPermission === 'granted'
+                          ? 'bg-emerald-400'
+                          : pushPermission === 'denied'
+                          ? 'bg-rose-400'
+                          : 'bg-amber-400'
+                      }`}
+                    />
+                    <span className="capitalize">{pushPermission}</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500">
+                    {pushPermission === 'granted'
+                      ? 'Desktop notifications active'
+                      : 'Permission requested'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-Model Health Status List */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                    <IconCpu className="w-4 h-4 text-indigo-400" />
+                    <span>AI Model Endpoints Telemetry</span>
+                  </h2>
+                  <span className="text-xs font-mono text-zinc-500">
+                    {healthData?.models.length || aiModels.length} models monitored
+                  </span>
+                </div>
+
+                {(!healthData?.models || healthData.models.length === 0) && aiModels.length === 0 ? (
+                  <div className="p-8 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center space-y-3">
+                    <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-400">
+                      <IconCpu className="w-5 h-5" />
+                    </div>
+                    <div className="text-sm font-medium text-zinc-300">No AI Models Configured Yet</div>
+                    <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                      Add your AI models with API keys to start automated 1-hour health monitoring and downtime notifications.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentSection('models')}
+                      className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Configure AI Models →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {(healthData?.models || aiModels.map(m => ({ ...m, health: { status: 'untested', latency_ms: null, error_message: null, check_type: null, last_checked: null } }))).map((m: any) => {
+                      const isFailing = m.health?.status === 'error';
+                      const isHealthy = m.health?.status === 'healthy';
+                      const isTesting = checkingModelId === m.id;
+
+                      return (
+                        <div
+                          key={m.id}
+                          className={`p-4 rounded-xl bg-zinc-900/50 border transition-all ${
+                            isFailing
+                              ? 'border-rose-800/70 bg-rose-950/10'
+                              : isHealthy
+                              ? 'border-zinc-800/80 hover:border-zinc-700/80'
+                              : 'border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-zinc-100">{m.name}</span>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/60 uppercase">
+                                  {m.provider}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                                    isHealthy
+                                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/70'
+                                      : isFailing
+                                      ? 'bg-rose-950/60 text-rose-300 border-rose-800/70'
+                                      : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isHealthy
+                                        ? 'bg-emerald-400'
+                                        : isFailing
+                                        ? 'bg-rose-400 animate-pulse'
+                                        : 'bg-zinc-500'
+                                    }`}
+                                  />
+                                  <span className="capitalize">{m.health?.status || 'untested'}</span>
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 font-mono">
+                                <span>Key Hint: <span className="text-zinc-300">{m.key_hint || 'sk-••••'}</span></span>
+                                {m.health?.latency_ms !== null && m.health?.latency_ms !== undefined && (
+                                  <span>Latency: <span className={isHealthy ? 'text-emerald-400' : 'text-zinc-300'}>{m.health.latency_ms}ms</span></span>
+                                )}
+                                <span>
+                                  Last Checked:{' '}
+                                  <span className="text-zinc-300">
+                                    {m.health?.last_checked
+                                      ? new Date(m.health.last_checked).toLocaleTimeString()
+                                      : 'Pending 1-hour ping'}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleCheckSingleModel(m.id)}
+                                disabled={isTesting}
+                                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                {isTesting ? (
+                                  <>
+                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    <span>Pinging...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <IconActivity className="w-3.5 h-3.5 text-zinc-400" />
+                                    <span>Check Now</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Failure diagnostic banner */}
+                          {isFailing && m.health?.error_message && (
+                            <div className="mt-3 p-3 rounded-lg bg-rose-950/40 border border-rose-900/60 flex items-start gap-2.5 text-xs text-rose-300">
+                              <IconAlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                              <div className="space-y-0.5">
+                                <div className="font-semibold text-rose-200">Failure Detected:</div>
+                                <div className="font-mono text-[11px] text-rose-300/90 break-words">
+                                  {m.health.error_message}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Health Incident History & Push Notification Logs */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                      <IconBell className="w-4 h-4 text-indigo-400" />
+                      <span>Alert & Incident Log Feed</span>
+                    </h2>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      History of hourly checks and push notifications dispatched for your account.
+                    </p>
+                  </div>
+
+                  {notificationsList.some((n) => !n.is_read) && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      disabled={markingRead}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {markingRead ? 'Updating...' : 'Mark All as Read'}
+                    </button>
+                  )}
+                </div>
+
+                {notificationsList.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center text-xs text-zinc-500">
+                    No incident alerts logged. Your AI models are healthy and responding normally.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                    {notificationsList.map((notif) => {
+                      const isCritical = notif.severity === 'critical';
+                      const isWarning = notif.severity === 'warning';
+
+                      return (
+                        <div
+                          key={notif.id}
+                          className={`p-3.5 rounded-xl border transition-colors flex items-start justify-between gap-3 ${
+                            notif.is_read
+                              ? 'bg-zinc-950/40 border-zinc-800/60 opacity-80'
+                              : isCritical
+                              ? 'bg-rose-950/20 border-rose-800/60'
+                              : isWarning
+                              ? 'bg-amber-950/20 border-amber-800/60'
+                              : 'bg-zinc-900/60 border-zinc-800'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                isCritical
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : isWarning
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                  : 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                              }`}
+                            >
+                              {isCritical ? (
+                                <IconAlertTriangle className="w-3.5 h-3.5" />
+                              ) : (
+                                <IconBell className="w-3.5 h-3.5" />
+                              )}
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-zinc-200">
+                                  {notif.title}
+                                </span>
+                                <span
+                                  className={`text-[9px] font-mono px-1.5 py-0.2 rounded uppercase ${
+                                    isCritical
+                                      ? 'bg-rose-900/60 text-rose-300'
+                                      : isWarning
+                                      ? 'bg-amber-900/60 text-amber-300'
+                                      : 'bg-zinc-800 text-zinc-400'
+                                  }`}
+                                >
+                                  {notif.severity}
+                                </span>
+                                {!notif.is_read && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                )}
+                              </div>
+                              <p className="text-xs text-zinc-400 leading-relaxed">
+                                {notif.message}
+                              </p>
+                              <div className="text-[10px] font-mono text-zinc-500 pt-0.5">
+                                {new Date(notif.created_at).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {/* =========================================================================
