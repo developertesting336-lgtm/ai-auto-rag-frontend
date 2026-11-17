@@ -10,6 +10,7 @@ import {
   getProfile,
   fetchApiKeys,
   saveApiKey,
+  updateApiKey,
   deleteApiKey,
   generateAI,
   updateProfile,
@@ -238,6 +239,67 @@ function IconTrash({ className = '' }: { className?: string }) {
       style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
     >
       <path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+    </svg>
+  );
+}
+
+function IconEdit({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+    </svg>
+  );
+}
+
+function IconEye({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconEyeOff({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+    >
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" y1="2" x2="22" y2="22" />
     </svg>
   );
 }
@@ -591,6 +653,15 @@ export default function DashboardPage() {
   const [keyName, setKeyName] = useState('');
   const [keyValue, setKeyValue] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [editingApiKey, setEditingApiKey] = useState<ApiKeyItem | null>(null);
+  const [showKeyPassword, setShowKeyPassword] = useState(false);
+  const [showEditKeyModal, setShowEditKeyModal] = useState(false);
+  const [editingKeyItem, setEditingKeyItem] = useState<ApiKeyItem | null>(null);
+  const [editKeyName, setEditKeyName] = useState('');
+  const [editKeyProvider, setEditKeyProvider] = useState('gemini');
+  const [editKeyValue, setEditKeyValue] = useState('');
+  const [showEditKeyValue, setShowEditKeyValue] = useState(false);
+  const [savingEditModal, setSavingEditModal] = useState(false);
 
   // Billing & Subscription state (initialized instantly from localStorage to eliminate flicker)
   const [billingStatus, setBillingStatus] = useState<BillingStatusResponse | null>(() => {
@@ -1533,33 +1604,121 @@ export default function DashboardPage() {
     }
   };
 
+  const handleStartEditApiKey = (key: ApiKeyItem) => {
+    setEditingApiKey(key);
+    setKeyName(key.name);
+    setKeyProvider(key.provider);
+    setKeyValue('');
+    toast.info(`Editing "${key.name}". Change the name or enter a new API key.`);
+  };
+
+  const handleCancelEditApiKey = () => {
+    setEditingApiKey(null);
+    setKeyName('');
+    setKeyValue('');
+  };
+
+  const handleOpenEditModal = (key: ApiKeyItem) => {
+    setEditingKeyItem(key);
+    setEditKeyName(key.name);
+    setEditKeyProvider(key.provider);
+    setEditKeyValue('');
+    setShowEditKeyValue(false);
+    setShowEditKeyModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditKeyModal(false);
+    setEditingKeyItem(null);
+    setEditKeyName('');
+    setEditKeyValue('');
+    setShowEditKeyValue(false);
+  };
+
+  const handleSaveEditModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !editingKeyItem) return;
+    if (!editKeyName.trim()) {
+      toast.error('API key label / name cannot be empty.');
+      return;
+    }
+    setSavingEditModal(true);
+    try {
+      const payload: { name: string; provider: string; api_key?: string } = {
+        name: editKeyName.trim(),
+        provider: editKeyProvider,
+      };
+      if (editKeyValue.trim()) {
+        payload.api_key = editKeyValue.trim();
+      }
+      const res = await updateApiKey(editingKeyItem.id, payload, token);
+      if (res.success) {
+        toast.success(`API key "${editKeyName.trim()}" updated successfully!`);
+        handleCloseEditModal();
+        loadApiKeys(token);
+      } else {
+        toast.error(res.error || 'Failed to update API key');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error updating API key');
+    } finally {
+      setSavingEditModal(false);
+    }
+  };
+
   const handleSaveApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!keyValue.trim() || !token) return;
+    if (!token) return;
+
+    if (!editingApiKey && !keyValue.trim()) {
+      toast.error('API key is required.');
+      return;
+    }
 
     setSavingKey(true);
     try {
-      const res = await saveApiKey(
-        {
+      if (editingApiKey) {
+        const payload: { name?: string; provider?: string; api_key?: string } = {
+          name: keyName.trim() || editingApiKey.name,
           provider: keyProvider,
-          name: keyName.trim() || `${keyProvider.toUpperCase()} Key`,
-          api_key: keyValue.trim(),
-        },
-        token
-      );
-      if (res.success) {
-        setKeyName('');
-        setKeyValue('');
-        loadApiKeys(token);
-        toast.success(`${keyProvider.toUpperCase()} API key saved successfully!`);
-        setChatMessages([
-          {
-            role: 'assistant',
-            text: `Hello! I am your AI company assistant. I read your uploaded policy documents from Pinecone and answer customer queries based on them. Ask me anything!`,
-          },
-        ]);
+        };
+        if (keyValue.trim()) {
+          payload.api_key = keyValue.trim();
+        }
+
+        const res = await updateApiKey(editingApiKey.id, payload, token);
+        if (res.success) {
+          toast.success(`API key "${keyName.trim() || editingApiKey.name}" updated successfully!`);
+          setEditingApiKey(null);
+          setKeyName('');
+          setKeyValue('');
+          loadApiKeys(token);
+        } else {
+          toast.error(res.error || 'Failed to update API key');
+        }
       } else {
-        toast.error(res.error || 'Failed to save API key');
+        const res = await saveApiKey(
+          {
+            provider: keyProvider,
+            name: keyName.trim() || `${keyProvider.toUpperCase()} Key`,
+            api_key: keyValue.trim(),
+          },
+          token
+        );
+        if (res.success) {
+          setKeyName('');
+          setKeyValue('');
+          loadApiKeys(token);
+          toast.success(`${keyProvider.toUpperCase()} API key saved successfully!`);
+          setChatMessages([
+            {
+              role: 'assistant',
+              text: `Hello! I am your AI company assistant. I read your uploaded policy documents from Pinecone and answer customer queries based on them. Ask me anything!`,
+            },
+          ]);
+        } else {
+          toast.error(res.error || 'Failed to save API key');
+        }
       }
     } finally {
       setSavingKey(false);
@@ -4490,7 +4649,7 @@ export default function DashboardPage() {
                 </div>
                 <button
                   onClick={() => setCurrentSection('chatbot')}
-                  className="px-3.5 py-1.5 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors shrink-0 flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
                 >
                   <IconMessageSquare className="w-3.5 h-3.5" />
                   <span>Website Chatbot Keys →</span>
@@ -4498,12 +4657,37 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                  <div>
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                      Add Provider Key
-                    </h2>
-                    <p className="text-xs text-zinc-400 mt-0.5">Stored securely in your PostgreSQL database.</p>
+                {/* Left Column: Add / Edit Form */}
+                <div className={`p-5 rounded-xl bg-zinc-900/60 border transition-all duration-200 space-y-4 ${
+                  editingApiKey ? 'border-emerald-500/50 shadow-lg shadow-emerald-950/20' : 'border-zinc-800/80'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
+                        {editingApiKey ? (
+                          <>
+                            <IconEdit className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Edit Provider Key</span>
+                          </>
+                        ) : (
+                          <span>Add Provider Key</span>
+                        )}
+                      </h2>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {editingApiKey
+                          ? `Editing "${editingApiKey.name}" (${editingApiKey.key_hint})`
+                          : 'Stored securely in your PostgreSQL database.'}
+                      </p>
+                    </div>
+                    {editingApiKey && (
+                      <button
+                        type="button"
+                        onClick={handleCancelEditApiKey}
+                        className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
 
                   <form onSubmit={handleSaveApiKey} className="space-y-3.5 text-xs">
@@ -4512,16 +4696,20 @@ export default function DashboardPage() {
                       <select
                         value={keyProvider}
                         onChange={(e) => setKeyProvider(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs"
+                        className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs focus:border-zinc-600 focus:outline-none"
                       >
                         <option value="gemini">Google Gemini</option>
                         <option value="openai">OpenAI</option>
                         <option value="anthropic">Anthropic</option>
+                        <option value="groq">Groq</option>
+                        <option value="deepseek">DeepSeek</option>
                       </select>
                     </div>
 
                     <div>
-                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Label</label>
+                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
+                        {editingApiKey ? 'Label / Name' : 'Label'}
+                      </label>
                       <input
                         type="text"
                         placeholder="e.g. Production Key"
@@ -4532,34 +4720,62 @@ export default function DashboardPage() {
                     </div>
 
                     <div>
-                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">API Key</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-mono uppercase text-[10px] text-zinc-400">
+                          {editingApiKey ? 'API Key (Leave blank to keep existing)' : 'API Key'}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowKeyPassword(!showKeyPassword)}
+                          className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 flex items-center gap-1 cursor-pointer"
+                        >
+                          {showKeyPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
                       <input
-                        type="password"
-                        required
-                        placeholder="sk-..."
+                        type={showKeyPassword ? 'text' : 'password'}
+                        required={!editingApiKey}
+                        placeholder={editingApiKey ? `Leave blank to keep current (${editingApiKey.key_hint})` : 'sk-...'}
                         value={keyValue}
                         onChange={(e) => setKeyValue(e.target.value)}
                         className="w-full px-3 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-mono text-xs"
                       />
+                      {editingApiKey && (
+                        <p className="text-[10px] text-zinc-500 font-mono mt-1">
+                          Current hint: <span className="text-zinc-400 font-semibold">{editingApiKey.key_hint}</span> (AES-256-GCM encrypted). Leave blank to keep existing key.
+                        </p>
+                      )}
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={savingKey}
-                      className="w-full py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50"
-                    >
-                      {savingKey ? 'Saving...' : 'Save API Key'}
-                    </button>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={savingKey}
+                        className="flex-1 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingKey ? 'Saving...' : editingApiKey ? 'Update API Key' : 'Save API Key'}
+                      </button>
+                      {editingApiKey && (
+                        <button
+                          type="button"
+                          onClick={handleCancelEditApiKey}
+                          className="px-3 py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-xs transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </form>
                 </div>
 
+                {/* Right Column: Configured Keys List */}
                 <div className="lg:col-span-2 p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
                         Configured Keys ({apiKeys.length})
                       </h3>
-                      <p className="text-xs text-zinc-500 mt-0.5">Masked key representations.</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">Masked key representations stored securely in PostgreSQL.</p>
                     </div>
                   </div>
 
@@ -4570,29 +4786,187 @@ export default function DashboardPage() {
                   ) : (
                     <div className="divide-y divide-zinc-800/80">
                       {apiKeys.map((k) => (
-                        <div key={k.id} className="py-3 flex items-center justify-between text-xs">
+                        <div
+                          key={k.id}
+                          className={`py-3 px-2 rounded-lg flex items-center justify-between text-xs transition-colors ${
+                            editingApiKey?.id === k.id ? 'bg-zinc-800/40 border border-emerald-500/30' : 'hover:bg-zinc-900/40'
+                          }`}
+                        >
                           <div>
                             <div className="font-medium text-zinc-100 flex items-center gap-2">
                               <span>{k.name}</span>
                               <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
                                 {k.provider}
                               </span>
+                              {editingApiKey?.id === k.id && (
+                                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                                  Editing in Panel
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[11px] font-mono text-zinc-500 mt-0.5">hint: {k.key_hint}</div>
+                            <div className="text-[11px] font-mono text-zinc-500 mt-0.5">
+                              hint: <span className="text-zinc-400">{k.key_hint}</span>
+                            </div>
                           </div>
 
-                          <button
-                            onClick={() => handleDeleteApiKey(k.id)}
-                            className="text-zinc-500 hover:text-rose-400 p-1 transition-colors"
-                          >
-                            <IconTrash />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {/* Edit Button (Opens Modal & Allows Direct Name/Key Editing) */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(k)}
+                              className="px-2.5 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5 border border-zinc-700/60 cursor-pointer shadow-sm"
+                              title="Edit API key name and secret"
+                            >
+                              <IconEdit className="w-3.5 h-3.5 text-zinc-400" />
+                              <span>Edit</span>
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteApiKey(k.id)}
+                              className="p-1.5 rounded-md text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer"
+                              title="Delete API key"
+                            >
+                              <IconTrash />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
+
+              {/* =========================================================================
+                  EDIT API KEY MODAL
+              ========================================================================= */}
+              {showEditKeyModal && editingKeyItem && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                  <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 my-8">
+                    {/* Modal Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                      <div>
+                        <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
+                          <IconEdit className="w-4 h-4 text-emerald-400" />
+                          <span>Edit API Key & Name</span>
+                        </h2>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Update the label name, provider, or replace the encrypted API key secret.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCloseEditModal}
+                        className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveEditModal} className="space-y-4 text-xs">
+                      {/* Provider Select */}
+                      <div>
+                        <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
+                          Provider
+                        </label>
+                        <select
+                          value={editKeyProvider}
+                          onChange={(e) => setEditKeyProvider(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-xs focus:border-zinc-600 focus:outline-none"
+                        >
+                          <option value="gemini">Google Gemini</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="anthropic">Anthropic</option>
+                          <option value="groq">Groq</option>
+                          <option value="deepseek">DeepSeek</option>
+                        </select>
+                      </div>
+
+                      {/* Name / Label */}
+                      <div>
+                        <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
+                          API Key Label / Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Production Gemini Key"
+                          value={editKeyName}
+                          onChange={(e) => setEditKeyName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 text-xs focus:border-zinc-600 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* API Key Input */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-mono uppercase text-[10px] text-zinc-400">
+                            New API Key (Leave blank to keep existing)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowEditKeyValue(!showEditKeyValue)}
+                            className="text-[10px] font-mono text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
+                          >
+                            {showEditKeyValue ? (
+                              <>
+                                <IconEyeOff className="w-3 h-3" />
+                                <span>Hide</span>
+                              </>
+                            ) : (
+                              <>
+                                <IconEye className="w-3 h-3" />
+                                <span>Show</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <input
+                          type={showEditKeyValue ? 'text' : 'password'}
+                          placeholder={`Leave blank to keep current (${editingKeyItem.key_hint})`}
+                          value={editKeyValue}
+                          onChange={(e) => setEditKeyValue(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 font-mono text-xs focus:border-zinc-600 focus:outline-none"
+                        />
+                        <div className="mt-1.5 p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800 text-[11px] text-zinc-400 font-mono space-y-0.5">
+                          <div>
+                            Current Hint: <span className="text-zinc-200 font-semibold">{editingKeyItem.key_hint}</span>
+                          </div>
+                          <div className="text-[10px] text-zinc-500">
+                            Encrypted at rest using AES-256-GCM via KEYS_HASH. Leaving this field empty keeps the current key intact.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Modal Actions */}
+                      <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                        <button
+                          type="button"
+                          onClick={handleCloseEditModal}
+                          className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={savingEditModal}
+                          className="px-5 py-2 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                        >
+                          {savingEditModal ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            <span>Update API Key</span>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

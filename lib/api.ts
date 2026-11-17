@@ -371,6 +371,29 @@ export async function deleteApiKey(
 }
 
 /**
+ * Update an existing API key (name and/or api_key)
+ */
+export async function updateApiKey(
+  id: string,
+  data: { name?: string; api_key?: string; provider?: string },
+  token: string
+): Promise<{ success: boolean; data?: ApiKeyItem; error?: string; message?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/api-keys/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
  * Update user profile
  */
 export async function updateProfile(
