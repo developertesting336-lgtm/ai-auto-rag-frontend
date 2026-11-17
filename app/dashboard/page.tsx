@@ -3362,27 +3362,27 @@ export default function DashboardPage() {
             <div className="space-y-6 max-w-6xl">
               {/* Header Title Section */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
-                <div>
-                  <div className="flex items-center gap-2.5">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
                       Unipile Email Campaigns
                     </h1>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/80 font-medium">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/80 font-medium whitespace-nowrap shrink-0">
                       {campaigns.length} {campaigns.length === 1 ? 'Campaign' : 'Campaigns'}
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1">
+                  <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
                     Route incoming emails into AI-driven campaigns via Unipile webhooks. Configure custom prompts and choose your AI model.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
                   <button
                     type="button"
                     onClick={() => { if (token) loadCampaignsData(token); }}
-                    className="h-8 px-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="h-9 px-3.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-medium transition-colors inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <IconRefresh className="w-3.5 h-3.5" />
+                    <IconRefresh className="w-3.5 h-3.5 shrink-0" />
                     <span>Refresh</span>
                   </button>
                   <button
@@ -3401,9 +3401,9 @@ export default function DashboardPage() {
                       });
                       setShowCampaignModal(true);
                     }}
-                    className="h-8 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 cursor-pointer"
+                    className="h-9 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <IconPlus className="w-3.5 h-3.5" />
+                    <IconPlus className="w-3.5 h-3.5 shrink-0" />
                     <span>Create Campaign</span>
                   </button>
                 </div>
@@ -4068,27 +4068,27 @@ export default function DashboardPage() {
             <div className="space-y-6 max-w-6xl">
               {/* Header Title Section */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
-                <div>
-                  <div className="flex items-center gap-2.5">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
                       AI Models & Inference Providers
                     </h1>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 font-medium">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 font-medium whitespace-nowrap shrink-0">
                       🔒 AES-256 (KEYS_HASH)
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1">
+                  <p className="text-xs text-zinc-400 mt-1 max-w-2xl leading-relaxed">
                     Universal AI Model Support: Connect any AI model or provider (Google Gemini, OpenAI, Claude, Groq, DeepSeek, Mistral, OpenRouter, or Custom API). Select them dynamically in your Unipile Email Campaigns and Chatbots.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
                   <button
                     type="button"
                     onClick={() => { if (token) loadAiModelsData(token); }}
-                    className="h-8 px-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="h-9 px-3.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-medium transition-colors inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <IconRefresh className="w-3.5 h-3.5" />
+                    <IconRefresh className="w-3.5 h-3.5 shrink-0" />
                     <span>Refresh</span>
                   </button>
                   <button
@@ -4104,9 +4104,9 @@ export default function DashboardPage() {
                       });
                       setShowAiModelModal(true);
                     }}
-                    className="h-8 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 cursor-pointer"
+                    className="h-9 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <IconPlus className="w-3.5 h-3.5" />
+                    <IconPlus className="w-3.5 h-3.5 shrink-0" />
                     <span>Add AI Model</span>
                   </button>
                 </div>
