@@ -522,7 +522,7 @@ function IconCpu({ className = '' }: { className?: string }) {
   );
 }
 
-type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'models' | 'playground' | 'apikeys' | 'billing' | 'settings';
+type NavSection = 'overview' | 'company' | 'chatbot' | 'email' | 'models' | 'apikeys' | 'billing' | 'settings';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -759,13 +759,6 @@ export default function DashboardPage() {
       (mail.message_id || '').toLowerCase().includes(q)
     );
   });
-
-  // AI Playground state
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiProvider, setAiProvider] = useState('gemini');
-  const [aiModel, setAiModel] = useState('gemini-1.5-flash');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<{ response?: string; tokens?: number; durationMs?: number; error?: string } | null>(null);
 
   // Settings state
   const [nameInput, setNameInput] = useState('');
@@ -1740,25 +1733,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRunAiPrompt = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt.trim() || !token) return;
-
-    setAiLoading(true);
-    setAiResult(null);
-
-    try {
-      const res = await generateAI({ prompt: aiPrompt.trim(), provider: aiProvider, model: aiModel }, token);
-      if (res.success) {
-        setAiResult({ response: res.response, tokens: res.tokens, durationMs: res.durationMs });
-      } else {
-        setAiResult({ error: res.error || 'AI generation failed.' });
-      }
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nameInput.trim() || !token) return;
@@ -1982,21 +1956,7 @@ export default function DashboardPage() {
               </span>
             </button>
 
-            <button
-              onClick={() => {
-                setCurrentSection('playground');
-                setSidebarOpen(false);
-              }}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2.5 text-xs font-medium transition-colors cursor-pointer ${currentSection === 'playground'
-                  ? 'bg-zinc-800 text-white shadow-xs'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-                }`}
-            >
-              <div className="w-4 h-4 shrink-0 flex items-center justify-center">
-                <IconSparkles className={currentSection === 'playground' ? 'text-zinc-100' : 'text-zinc-400'} />
-              </div>
-              <span className="truncate">AI Playground</span>
-            </button>
+
 
             <button
               onClick={() => {
@@ -2262,14 +2222,14 @@ export default function DashboardPage() {
                     Welcome back, {user?.name?.split(' ')[0]}
                   </h1>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Telemetry, vector knowledge base status, and email webhook endpoints.
+                    Telemetry, email campaign stats, and multi-model AI automation endpoints.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2.5">
                   <button
                     onClick={() => setCurrentSection('company')}
-                    className="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 text-zinc-950 hover:bg-white transition-colors flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-100 text-zinc-950 hover:bg-white transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <IconBuilding className="w-3.5 h-3.5" />
                     <span>{company ? 'Manage Company' : 'Setup Company'}</span>
@@ -2312,7 +2272,7 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Minimalist Metrics Grid */}
+              {/* Minimalist Metrics Grid (Pinecone/Vector DB and AI Engine replaced with Campaigns & Models) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Metric 1: Company */}
                 <div
@@ -2331,116 +2291,147 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Metric 2: Pinecone Policies */}
-                <div
-                  onClick={() => setCurrentSection('company')}
-                  className="group p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Vector Policies</span>
-                    <IconFileText className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
-                  </div>
-                  <div className="text-2xl font-semibold tracking-tight text-zinc-100">
-                    {policies.length}
-                  </div>
-                  <div className="text-[11px] text-zinc-500 mt-1">
-                    Pinecone DB indexed
-                  </div>
-                </div>
-
-                {/* Metric 3: Email Integration */}
+                {/* Metric 2: Email Campaigns */}
                 <div
                   onClick={() => setCurrentSection('email')}
                   className="group p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-all cursor-pointer"
                 >
                   <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Email Webhook</span>
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Email Campaigns</span>
                     <IconMail className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={`w-2 h-2 rounded-full ${isUnipileConnected ? 'bg-emerald-400' : 'bg-zinc-600'
-                        }`}
-                    />
-                    <span className="text-sm font-semibold text-zinc-100">
-                      {isUnipileConnected ? `${inboundEmails.length} Inbound Mail${inboundEmails.length === 1 ? '' : 's'}` : 'Unconfigured'}
-                    </span>
+                  <div className="text-2xl font-semibold tracking-tight text-zinc-100">
+                    {campaigns.length}
                   </div>
                   <div className="text-[11px] text-zinc-500 mt-1">
-                    {isUnipileConnected ? 'Unipile active & listening' : 'Click to setup Unipile webhook'}
+                    {campaigns.length === 1 ? '1 active campaign' : `${campaigns.length} campaigns configured`}
                   </div>
                 </div>
 
-                {/* Metric 4: AI Automation Engine */}
+                {/* Metric 3: Inbound Emails Feed */}
                 <div
-                  onClick={() => setCurrentSection('playground')}
+                  onClick={() => setCurrentSection('email')}
                   className="group p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-all cursor-pointer"
                 >
                   <div className="flex items-center justify-between text-zinc-400 mb-2">
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">AI Engine</span>
-                    <IconSparkles className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">Inbound Feed</span>
+                    <IconMailOpen className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`w-2 h-2 rounded-full ${inboundEmails.length > 0 ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                    />
+                    <span className="text-sm font-semibold text-zinc-100">
+                      {inboundEmails.length} Inbound Mail{inboundEmails.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-1">
+                    Unipile webhook stream
+                  </div>
+                </div>
+
+                {/* Metric 4: Connected AI Models */}
+                <div
+                  onClick={() => setCurrentSection('models')}
+                  className="group p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-zinc-400 mb-2">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-500">AI Models</span>
+                    <IconCpu className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    <span className="text-sm font-semibold text-zinc-100">Operational</span>
+                    <span className="text-sm font-semibold text-zinc-100">
+                      {aiModels.length} Model{aiModels.length === 1 ? '' : 's'}
+                    </span>
                   </div>
                   <div className="text-[11px] text-zinc-500 mt-1">
-                    {apiKeys.length > 0 ? `${apiKeys.length} integration key${apiKeys.length === 1 ? '' : 's'}` : 'Gemini 2.0 Flash'}
+                    {apiKeys.length > 0 ? `${apiKeys.length} integration key${apiKeys.length === 1 ? '' : 's'}` : 'Click to configure'}
                   </div>
                 </div>
               </div>
 
               {/* Status details split panels */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Panel 1: Pinecone Vector KB */}
+                {/* Panel 1: Connected AI Models Hub */}
                 <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                      Pinecone Vector Knowledge Base
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                      <IconCpu className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Connected AI Models</span>
                     </h3>
-                    <span className="text-[10px] font-mono text-zinc-500">index: company-policies</span>
+                    <span className="text-[10px] font-mono text-zinc-500">{aiModels.length} configured</span>
                   </div>
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    Policies uploaded in PDF format are vectorized for AI semantic retrieval and search via Pinecone Vector DB.
+                    Custom LLM models for Unipile email automation and chatbots with authenticated AES-256 encrypted credentials.
                   </p>
                   <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 font-mono text-xs space-y-1.5">
                     <div className="flex items-center justify-between text-zinc-400">
-                      <span className="text-zinc-500">Vector Index</span>
-                      <span className="text-emerald-400">company-policies</span>
-                    </div>
-                    <div className="flex items-center justify-between text-zinc-400">
-                      <span className="text-zinc-500">Indexed Documents</span>
-                      <span className="text-zinc-200">{policies.length} documents</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Panel 2: Unipile Email Configuration */}
-                <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                      Unipile Email Sync
-                    </h3>
-                    <span className="text-[10px] font-mono text-zinc-500">webhook channel</span>
-                  </div>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
-                    Manage outbound and inbound corporate email pipelines. Connect your Unipile account to automate email workflows.
-                  </p>
-                  <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 font-mono text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-zinc-400">
-                      <span className="text-zinc-500">API Key</span>
-                      <span className="text-zinc-200">{unipileSettings?.api_key_masked || 'Not saved yet'}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-zinc-400">
-                      <span className="text-zinc-500">AI Prompt Rules</span>
-                      <span className={unipileAiPrompt ? 'text-emerald-400' : 'text-zinc-400'}>
-                        {unipileAiPrompt ? 'Configured' : 'Default'}
+                      <span className="text-zinc-500">Active Providers</span>
+                      <span className="text-indigo-400">
+                        {aiModels.length > 0
+                          ? Array.from(new Set(aiModels.map((m) => m.provider.toUpperCase()))).join(', ')
+                          : 'None yet'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-zinc-400">
-                      <span className="text-zinc-500">Inbound Endpoint</span>
-                      <span className="text-zinc-200 truncate max-w-[200px]">/api/email/webhook/:token</span>
+                      <span className="text-zinc-500">Integration API Keys</span>
+                      <span className="text-zinc-200">{apiKeys.length} saved</span>
                     </div>
+                    <div className="flex items-center justify-between text-zinc-400">
+                      <span className="text-zinc-500">Default Model</span>
+                      <span className="text-emerald-400">
+                        {aiModels[0]?.model_name || 'gemini-2.0-flash'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentSection('models')}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Manage AI Models</span>
+                      <span>→</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Panel 2: Unipile Email Campaigns */}
+                <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                      <IconMail className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Unipile Email Campaigns</span>
+                    </h3>
+                    <span className="text-[10px] font-mono text-zinc-500">{campaigns.length} campaigns</span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Webhook-driven automated email responses with custom prompts, Unipile API synchronization, and real-time execution logs.
+                  </p>
+                  <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 font-mono text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-zinc-400">
+                      <span className="text-zinc-500">Active Campaigns</span>
+                      <span className="text-emerald-400">{campaigns.length} active</span>
+                    </div>
+                    <div className="flex items-center justify-between text-zinc-400">
+                      <span className="text-zinc-500">Inbound Logged</span>
+                      <span className="text-zinc-200">{inboundEmails.length} messages</span>
+                    </div>
+                    <div className="flex items-center justify-between text-zinc-400">
+                      <span className="text-zinc-500">Inbound Endpoint</span>
+                      <span className="text-zinc-200 truncate max-w-[200px]">/api/campaigns/webhook/:token</span>
+                    </div>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentSection('email')}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Manage Email Campaigns</span>
+                      <span>→</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4164,7 +4155,7 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="text-sm font-semibold text-zinc-200">No Custom AI Models Added</h3>
                     <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
-                      Add your AI models with API keys to select them in Unipile Email Campaigns, Chatbots, and AI Playground.
+                      Add your AI models with API keys to select them in Unipile Email Campaigns and Chatbots.
                     </p>
                   </div>
                   <button
@@ -4520,122 +4511,6 @@ export default function DashboardPage() {
               )}
             </div>
           )}
-          {/* =========================================================================
-              VIEW 4: AI PLAYGROUND (TERMINAL/CONSOLE AESTHETIC)
-          ========================================================================= */}
-          {currentSection === 'playground' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-4">
-                <div>
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                    Model Playground
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Test LLM inference with Gemini or OpenAI models.
-                  </p>
-                </div>
-
-                <form onSubmit={handleRunAiPrompt} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Provider</label>
-                      <select
-                        value={aiProvider}
-                        onChange={(e) => {
-                          setAiProvider(e.target.value);
-                          if (e.target.value === 'gemini') setAiModel('gemini-2.0-flash');
-                          if (e.target.value === 'openai') setAiModel('gpt-4o-mini');
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs"
-                      >
-                        <option value="gemini">Google Gemini</option>
-                        <option value="openai">OpenAI</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Model</label>
-                      <select
-                        value={aiModel}
-                        onChange={(e) => setAiModel(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-200 font-mono text-xs"
-                      >
-                        {aiProvider === 'gemini' ? (
-                          <>
-                            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-                            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                          </>
-                        ) : (
-                          <>
-                            <option value="gpt-4o-mini">gpt-4o-mini</option>
-                            <option value="gpt-4o">gpt-4o</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">Prompt</label>
-                    <textarea
-                      rows={6}
-                      required
-                      placeholder="Ask or command the model..."
-                      value={aiPrompt}
-                      onChange={(e) => setAiPrompt(e.target.value)}
-                      className="w-full p-3 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 resize-none font-mono text-xs"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={aiLoading}
-                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {aiLoading ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
-                        <span>Generating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <IconSparkles />
-                        <span>Run Prompt</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* Output Console */}
-              <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex flex-col justify-between space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                    Inference Output
-                  </span>
-                  {aiResult && !aiResult.error && (
-                    <span className="text-[11px] font-mono text-zinc-500">
-                      {aiResult.durationMs}ms • {aiResult.tokens} tokens
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex-1 min-h-[220px] p-3.5 rounded-lg bg-zinc-950 border border-zinc-800/80 font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-y-auto">
-                  {aiLoading ? (
-                    <span className="text-zinc-500 animate-pulse">Waiting for model completion...</span>
-                  ) : aiResult?.error ? (
-                    <span className="text-rose-400">{aiResult.error}</span>
-                  ) : aiResult?.response ? (
-                    <span className="text-zinc-200">{aiResult.response}</span>
-                  ) : (
-                    <span className="text-zinc-600">Submit a prompt on the left to inspect raw model output.</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* =========================================================================
               VIEW 5: API KEYS & PROVIDERS
           ========================================================================= */}
@@ -5204,7 +5079,7 @@ export default function DashboardPage() {
                           description: 'For growing teams requiring robust email automation and multi-company chatbots.',
                           features: [
                             'Unlimited Company Profiles',
-                            'Unlimited PDF Knowledge Base Vector Storage',
+                            'Unlimited Knowledge Base Storage',
                             'Custom Multi-Tenant Chatbot API Keys',
                             'AI Email Auto-Responder with Rule Engine',
                             'Live Unipile API Synchronization & Viewer',
