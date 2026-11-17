@@ -652,7 +652,7 @@ export default function DashboardPage() {
 
   // AI Models state (Multi-Provider: Gemini, OpenAI, Claude, Groq, DeepSeek)
   const [aiModels, setAiModels] = useState<AiModelItem[]>([]);
-  const [loadingAiModels, setLoadingAiModels] = useState(false);
+  const [loadingAiModels, setLoadingAiModels] = useState(true);
   const [showAiModelModal, setShowAiModelModal] = useState(false);
   const [editingAiModel, setEditingAiModel] = useState<AiModelItem | null>(null);
   const [aiModelForm, setAiModelForm] = useState({
@@ -677,7 +677,7 @@ export default function DashboardPage() {
 
   // Health & Push Notification state
   const [healthData, setHealthData] = useState<HealthOverviewData | null>(null);
-  const [loadingHealth, setLoadingHealth] = useState(false);
+  const [loadingHealth, setLoadingHealth] = useState(true);
   const [checkingAllModels, setCheckingAllModels] = useState(false);
   const [checkingModelId, setCheckingModelId] = useState<string | null>(null);
   const [notificationsList, setNotificationsList] = useState<UserNotificationItem[]>([]);
@@ -1143,7 +1143,7 @@ export default function DashboardPage() {
   const loadHealthData = async (authToken?: string, quiet = false) => {
     const t = authToken || token;
     if (!t) return;
-    if (!quiet) setLoadingHealth(true);
+    if (!quiet || !healthData) setLoadingHealth(true);
     try {
       const [overviewRes, notifsRes] = await Promise.all([
         fetchHealthOverview(t),
@@ -1159,7 +1159,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('[Health] Failed to load telemetry:', err);
     } finally {
-      if (!quiet) setLoadingHealth(false);
+      setLoadingHealth(false);
     }
   };
 
@@ -4357,8 +4357,9 @@ export default function DashboardPage() {
 
               {/* AI Models Cards Grid */}
               {loadingAiModels ? (
-                <div className="p-12 text-center text-xs font-mono text-zinc-500 animate-pulse">
-                  Loading AI models...
+                <div className="p-12 rounded-xl bg-zinc-950 border border-zinc-800/80 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-mono text-zinc-400">Loading AI models...</span>
                 </div>
               ) : aiModels.length === 0 ? (
                 <div className="p-10 rounded-2xl bg-zinc-900/30 border border-dashed border-zinc-800 text-center space-y-4 max-w-xl mx-auto">
@@ -4831,17 +4832,27 @@ export default function DashboardPage() {
                     System Status
                   </div>
                   <div className="text-base font-semibold text-zinc-100 flex items-center gap-2">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        healthData?.overall_status === 'degraded' ? 'bg-rose-400' : 'bg-emerald-400'
-                      }`}
-                    />
-                    <span>{healthData?.overall_status === 'degraded' ? 'Degraded' : 'Operational'}</span>
+                    {loadingHealth && !healthData ? (
+                      <span className="h-5 w-24 bg-zinc-800 animate-pulse rounded inline-block" />
+                    ) : (
+                      <>
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            healthData?.overall_status === 'degraded' ? 'bg-rose-400' : 'bg-emerald-400'
+                          }`}
+                        />
+                        <span>{healthData?.overall_status === 'degraded' ? 'Degraded' : 'Operational'}</span>
+                      </>
+                    )}
                   </div>
                   <div className="text-[11px] text-zinc-500">
-                    {healthData?.failing_count
-                      ? `${healthData.failing_count} model(s) failing`
-                      : 'All endpoints healthy'}
+                    {loadingHealth && !healthData ? (
+                      <span className="h-3 w-28 bg-zinc-800/60 animate-pulse rounded inline-block mt-0.5" />
+                    ) : healthData?.failing_count ? (
+                      `${healthData.failing_count} model(s) failing`
+                    ) : (
+                      'All endpoints healthy'
+                    )}
                   </div>
                 </div>
 
@@ -4850,12 +4861,22 @@ export default function DashboardPage() {
                     Monitored AI Models
                   </div>
                   <div className="text-base font-semibold text-zinc-100">
-                    {healthData?.total_models ?? aiModels.length} Configured
+                    {loadingHealth && !healthData ? (
+                      <span className="h-5 w-20 bg-zinc-800 animate-pulse rounded inline-block" />
+                    ) : (
+                      `${healthData?.total_models ?? aiModels.length} Configured`
+                    )}
                   </div>
                   <div className="text-[11px] text-zinc-500 flex items-center gap-2 font-mono">
-                    <span className="text-emerald-400">{healthData?.healthy_count ?? 0} passing</span>
-                    <span>•</span>
-                    <span className="text-rose-400">{healthData?.failing_count ?? 0} failing</span>
+                    {loadingHealth && !healthData ? (
+                      <span className="h-3 w-28 bg-zinc-800/60 animate-pulse rounded inline-block mt-0.5" />
+                    ) : (
+                      <>
+                        <span className="text-emerald-400">{healthData?.healthy_count ?? 0} passing</span>
+                        <span>•</span>
+                        <span className="text-rose-400">{healthData?.failing_count ?? 0} failing</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -4909,7 +4930,12 @@ export default function DashboardPage() {
                   </span>
                 </div>
 
-                {(!healthData?.models || healthData.models.length === 0) && aiModels.length === 0 ? (
+                {loadingHealth && !healthData ? (
+                  <div className="p-10 rounded-xl bg-zinc-950 border border-zinc-800/80 flex flex-col items-center justify-center space-y-3">
+                    <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-mono text-zinc-400">Loading AI model endpoints & telemetry...</span>
+                  </div>
+                ) : (!healthData?.models || healthData.models.length === 0) && aiModels.length === 0 ? (
                   <div className="p-8 rounded-xl bg-zinc-950 border border-zinc-800/80 text-center space-y-3">
                     <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-400">
                       <IconCpu className="w-5 h-5" />
