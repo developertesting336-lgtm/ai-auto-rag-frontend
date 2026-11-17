@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { toast } from '../../components/Toast';
 import {
   AuthStorage,
   checkBackendHealth,
@@ -36,6 +37,8 @@ import {
   createCheckoutSession,
   createCustomerPortal,
   simulatePaymentSuccess,
+  adjustTrialPeriod,
+  clearPaymentHistory,
   BillingPlanItem,
   UserSubscription,
   PaymentItem,
@@ -504,15 +507,85 @@ export default function DashboardPage() {
   const [keyValue, setKeyValue] = useState('');
   const [savingKey, setSavingKey] = useState(false);
 
-  // Billing & Subscription state
-  const [billingStatus, setBillingStatus] = useState<BillingStatusResponse | null>(null);
+  // Billing & Subscription state (initialized instantly from localStorage to eliminate flicker)
+  const [billingStatus, setBillingStatus] = useState<BillingStatusResponse | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const cached = localStorage.getItem('auth_billing_status');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [paymentHistory, setPaymentHistory] = useState<PaymentItem[]>([]);
   const [loadingBilling, setLoadingBilling] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [billingFeedback, setBillingFeedback] = useState<{ text: string; error?: boolean } | null>(null);
 
+  const isBillingLoaded = billingStatus !== null;
   const hasActiveSubscription = Boolean(billingStatus?.hasActiveSubscription);
+  const isTrialActive = Boolean(billingStatus?.isTrialActive);
+  const isTrialExpired = Boolean(billingStatus?.isTrialExpired);
+  const isPaid = Boolean(billingStatus?.isPaid);
+  const trialDaysRemaining = billingStatus?.trialDaysRemaining ?? 0;
+  const trialEndsAt = billingStatus?.trialEndsAt;
   const isPastDue = Boolean(billingStatus?.isPastDue);
+
+  // 1-second precision live countdown state for 7-day free trial
+  const [trialCountdown, setTrialCountdown] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+    isExpired: boolean;
+    formatted: string;
+  }>({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isExpired: false,
+    formatted: '',
+  });
+
+  useEffect(() => {
+    if (!trialEndsAt) {
+      setTrialCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: false, formatted: '' });
+      return;
+    }
+
+    const updateTimer = () => {
+      const targetTime = new Date(trialEndsAt).getTime();
+      const diff = targetTime - Date.now();
+      if (diff <= 0) {
+        setTrialCountdown({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          isExpired: true,
+          formatted: '0d 00h 00m 00s',
+        });
+      } else {
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const minutes = Math.floor((diff / 1000 / 60) % 60);
+        const seconds = Math.floor((diff / 1000) % 60);
+        setTrialCountdown({
+          days,
+          hours,
+          minutes,
+          seconds,
+          isExpired: false,
+          formatted: `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`,
+        });
+      }
+    };
+
+    updateTimer();
+    const timerId = setInterval(updateTimer, 1000);
+    return () => clearInterval(timerId);
+  }, [trialEndsAt]);
 
   // Derived user API key status (Strictly requiring user-provided key)
   const hasGeminiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini');
@@ -689,6 +762,7 @@ export default function DashboardPage() {
     try {
       const res = await deleteCompany(companyId, token);
       if (res.success) {
+        toast.success(res.message || `Company "${targetComp?.name || ''}" deleted successfully.`);
         setCompanyFeedback({ text: res.message || 'Company deleted successfully.' });
         const remaining = companiesList.filter((c) => c.id !== companyId);
         setCompaniesList(remaining);
@@ -700,6 +774,7 @@ export default function DashboardPage() {
           setChatbotKeys([]);
         }
       } else {
+        toast.error(res.error || 'Failed to delete company.');
         setCompanyFeedback({ text: res.error || 'Failed to delete company.', error: true });
       }
     } finally {
@@ -746,6 +821,9 @@ export default function DashboardPage() {
       ]);
       if (bStatus.success) {
         setBillingStatus(bStatus);
+        try {
+          localStorage.setItem('auth_billing_status', JSON.stringify(bStatus));
+        } catch {}
       }
       if (pHistory.success && pHistory.payments) {
         setPaymentHistory(pHistory.payments);
@@ -771,19 +849,32 @@ export default function DashboardPage() {
     }
   };
 
-  const handleQuickTestPayment = async (planId: string) => {
+  const handleClearPayments = async () => {
     if (!token) return;
-    setCheckoutLoading(`test_${planId}`);
-    setBillingFeedback(null);
     try {
-      const res = await simulatePaymentSuccess(planId, token);
+      const res = await clearPaymentHistory(token);
       if (res.success) {
-        setBillingFeedback({
-          text: `🎉 ${res.message || 'Plan activated! Features are now unlocked.'}`,
-        });
+        setPaymentHistory([]);
+        toast.success('Payments table deleted and emptied.');
         loadBillingData(token);
       } else {
-        setBillingFeedback({ text: res.error || 'Failed to activate test subscription.', error: true });
+        toast.error(res.error || 'Failed to empty payments table.');
+      }
+    } catch {
+      toast.error('Error emptying payments table.');
+    }
+  };
+
+  const handleAdjustTrial = async (action: 'reset' | 'expire') => {
+    if (!token) return;
+    setCheckoutLoading(`trial_${action}`);
+    try {
+      const res = await adjustTrialPeriod(action, token);
+      if (res.success) {
+        toast.success(res.message || 'Trial state updated successfully.');
+        loadBillingData(token);
+      } else {
+        toast.error(res.error || 'Failed to adjust trial.');
       }
     } finally {
       setCheckoutLoading(null);
@@ -824,8 +915,10 @@ export default function DashboardPage() {
           setCompany(res.company);
           setCompaniesList((prev) => prev.map((c) => (c.id === res.company!.id ? res.company! : c)));
           setIsEditingCompany(false);
+          toast.success('Company profile updated successfully.');
           setCompanyFeedback({ text: 'Company profile updated successfully.' });
         } else {
+          toast.error(res.error || 'Failed to update company.');
           setCompanyFeedback({ text: res.error || 'Failed to update company.', error: true });
         }
       } else {
@@ -836,6 +929,7 @@ export default function DashboardPage() {
           setIsCreatingNewCompany(false);
           setIsEditingCompany(false);
           setSelectedEmbedKey(res.company.api_key || '');
+          toast.success(`Company "${res.company.name}" created successfully!`);
           setCompanyFeedback({ text: `Company "${res.company.name}" created! You can now upload PDF policies and test its chatbot.` });
           loadPolicies(res.company.id, token);
           loadChatbotKeys(token, res.company.id);
@@ -846,6 +940,7 @@ export default function DashboardPage() {
             },
           ]);
         } else {
+          toast.error(res.error || 'Failed to create company.');
           setCompanyFeedback({ text: res.error || 'Failed to create company.', error: true });
         }
       }
@@ -858,7 +953,14 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!token || !company || !policyTitle.trim() || !selectedFile) return;
 
+    if (!hasActiveSubscription) {
+      toast.error('Active subscription required. Please activate a plan in Billing & Plans to upload policy documents.');
+      setPolicyFeedback({ text: 'Active subscription required. Please upgrade in Billing & Plans to upload PDF policies.', error: true });
+      return;
+    }
+
     if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Please select a valid PDF file.');
       setPolicyFeedback({ text: 'Please select a valid PDF file.', error: true });
       return;
     }
@@ -884,8 +986,10 @@ export default function DashboardPage() {
         setPolicyTitle('');
         setSelectedFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
+        toast.success(res.message || 'Policy document stored in R2 and indexed into Pinecone!');
         setPolicyFeedback({ text: res.message || 'Policy document stored in R2 and indexed into Pinecone.' });
       } else {
+        toast.error(res.error || 'Failed to upload policy document.');
         setPolicyFeedback({ text: res.error || 'Failed to upload policy document.', error: true });
       }
     } finally {
@@ -925,8 +1029,10 @@ export default function DashboardPage() {
         setChatbotKeys((prev) => [res.key!, ...prev]);
         setSelectedEmbedKey(res.key.api_key);
         setNewChatbotKeyName('');
+        toast.success(`Chatbot API key "${res.key.name}" generated!`);
         setChatbotKeyFeedback({ text: `Key "${res.key.name}" generated! You can copy it below for your website.` });
       } else {
+        toast.error(res.error || 'Failed to generate key.');
         setChatbotKeyFeedback({ text: res.error || 'Failed to generate key.', error: true });
       }
     } finally {
@@ -938,19 +1044,37 @@ export default function DashboardPage() {
     if (!token) return;
     if (!confirm('Revoke this Chatbot API key? Any website widget using this key will stop responding.')) return;
 
-    const res = await deleteChatbotKey(keyId, token);
-    if (res.success) {
-      setChatbotKeys((prev) => prev.filter((k) => k.id !== keyId));
-      if (selectedEmbedKey === keyId) {
-        setSelectedEmbedKey(company?.api_key || '');
+    try {
+      const res = await deleteChatbotKey(keyId, token);
+      if (res.success) {
+        setChatbotKeys((prev) => prev.filter((k) => k.id !== keyId));
+        if (selectedEmbedKey === keyId) {
+          setSelectedEmbedKey(company?.api_key || '');
+        }
+        toast.success('Chatbot key revoked successfully.');
+      } else {
+        toast.error(res.error || 'Failed to revoke key.');
       }
-    } else {
-      alert(res.error || 'Failed to revoke key.');
+    } catch (err: any) {
+      toast.error('Error revoking chatbot key.');
     }
   };
 
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!hasActiveSubscription) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: isTrialExpired
+            ? '⚠️ 7-Day Free Trial Expired: Your 1-week free trial has ended. Please subscribe to an active plan in Billing & Plans to continue testing or embedding your AI chatbot.'
+            : '⚠️ Subscription Required: Please activate an active plan in Billing & Plans to query this AI chatbot.',
+        },
+      ]);
+      return;
+    }
+
     if (!hasUserAiKey) {
       setChatMessages((prev) => [
         ...prev,
@@ -997,11 +1121,16 @@ export default function DashboardPage() {
     if (!token) return;
     if (!confirm('Remove this policy document from your knowledge base?')) return;
 
-    const res = await deleteCompanyPolicy(policyId, token);
-    if (res.success) {
-      setPolicies(policies.filter((p) => p.id !== policyId));
-    } else {
-      alert(res.error || 'Failed to delete policy.');
+    try {
+      const res = await deleteCompanyPolicy(policyId, token);
+      if (res.success) {
+        setPolicies(policies.filter((p) => p.id !== policyId));
+        toast.success(res.message || 'Policy document removed from knowledge base.');
+      } else {
+        toast.error(res.error || 'Failed to delete policy.');
+      }
+    } catch (err: any) {
+      toast.error('Error deleting policy document.');
     }
   };
 
@@ -1009,6 +1138,7 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!token) return;
     if (!unipileApiKey.trim() && !unipileSettings?.api_key_masked) {
+      toast.error('Please enter your Unipile API key.');
       setUnipileFeedback({ text: 'Please enter your Unipile API key.', error: true });
       return;
     }
@@ -1034,9 +1164,11 @@ export default function DashboardPage() {
         if (res.settings.ai_prompt !== undefined) {
           setUnipileAiPrompt(res.settings.ai_prompt);
         }
+        toast.success('Unipile configuration updated successfully.');
         setUnipileFeedback({ text: 'Unipile configuration updated successfully.' });
         setTimeout(() => setUnipileFeedback(null), 3500);
       } else {
+        toast.error(res.error || 'Failed to save settings.');
         setUnipileFeedback({ text: res.error || 'Failed to save settings.', error: true });
       }
     } finally {
@@ -1054,9 +1186,11 @@ export default function DashboardPage() {
     try {
       const res = await saveEmailPrompt(unipileAiPrompt.trim(), token);
       if (res.success) {
+        toast.success('AI email rules and instructions saved successfully!');
         setPromptFeedback({ text: 'AI email rules and instructions saved successfully!' });
         setTimeout(() => setPromptFeedback(null), 3500);
       } else {
+        toast.error(res.error || 'Failed to save prompt instructions.');
         setPromptFeedback({ text: res.error || 'Failed to save prompt instructions.', error: true });
       }
     } finally {
@@ -1091,6 +1225,12 @@ export default function DashboardPage() {
 
   const handleSimulateEmail = async () => {
     if (!token) return;
+    if (!hasActiveSubscription) {
+      toast.error(isTrialExpired
+        ? '7-Day free trial expired. Please subscribe to an active plan in Billing & Plans to process email automations.'
+        : 'Active plan required to simulate email automations.');
+      return;
+    }
     setSimulatingEmail(true);
     try {
       const res = await simulateInboundEmail(
@@ -1104,9 +1244,11 @@ export default function DashboardPage() {
       );
       if (res.success && res.email) {
         setInboundEmails((prev) => [res.email!, ...prev]);
+        toast.success('Simulated email arrived and saved to database!');
         setUnipileFeedback({ text: 'Simulated inbound email created and saved to database! Click to inspect below.' });
         setTimeout(() => setUnipileFeedback(null), 4000);
       } else {
+        toast.error(res.error || 'Failed to simulate email.');
         setUnipileFeedback({ text: res.error || 'Failed to simulate email.', error: true });
       }
     } finally {
@@ -1132,6 +1274,7 @@ export default function DashboardPage() {
         setKeyName('');
         setKeyValue('');
         loadApiKeys(token);
+        toast.success(`${keyProvider.toUpperCase()} API key saved successfully!`);
         setChatMessages([
           {
             role: 'assistant',
@@ -1139,7 +1282,7 @@ export default function DashboardPage() {
           },
         ]);
       } else {
-        alert(res.error || 'Failed to save API key');
+        toast.error(res.error || 'Failed to save API key');
       }
     } finally {
       setSavingKey(false);
@@ -1148,9 +1291,16 @@ export default function DashboardPage() {
 
   const handleDeleteApiKey = async (id: string) => {
     if (!token || !confirm('Delete this integration key?')) return;
-    const res = await deleteApiKey(id, token);
-    if (res.success) {
-      setApiKeys(apiKeys.filter((k) => k.id !== id));
+    try {
+      const res = await deleteApiKey(id, token);
+      if (res.success) {
+        setApiKeys(apiKeys.filter((k) => k.id !== id));
+        toast.success('Integration API key deleted.');
+      } else {
+        toast.error(res.error || 'Failed to delete API key.');
+      }
+    } catch (err: any) {
+      toast.error('Error deleting API key.');
     }
   };
 
@@ -1429,12 +1579,22 @@ export default function DashboardPage() {
               </div>
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.2 rounded shrink-0 ml-2 ${
-                  hasActiveSubscription
+                  !isBillingLoaded
+                    ? 'bg-zinc-800 text-zinc-400 border border-zinc-700/60'
+                    : isPaid
                     ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/60'
-                    : 'bg-amber-950/60 text-amber-400 border border-amber-800/60'
+                    : isTrialActive
+                    ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-800/60'
+                    : 'bg-rose-950/60 text-rose-400 border border-rose-800/60'
                 }`}
               >
-                {hasActiveSubscription ? (billingStatus?.subscription?.plan_id?.toUpperCase() || 'PAID') : 'UNPAID'}
+                {!isBillingLoaded
+                  ? 'TRIAL'
+                  : isPaid
+                  ? (billingStatus?.subscription?.plan_id?.toUpperCase() || 'PAID')
+                  : isTrialActive
+                  ? (trialCountdown.days > 0 ? `TRIAL (${trialCountdown.days}D)` : `TRIAL (${trialCountdown.hours}H)`)
+                  : 'EXPIRED'}
               </span>
             </button>
 
@@ -1575,6 +1735,89 @@ export default function DashboardPage() {
 
         {/* Dynamic Page Content */}
         <main className="flex-1 p-6 sm:p-8 max-w-6xl w-full mx-auto space-y-8">
+          {/* Global 7-Day Free Trial Active Live Countdown Banner */}
+          {isTrialActive && !isPaid && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-zinc-900 to-purple-950/60 border border-indigo-500/40 text-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xl shadow-indigo-950/20">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold shrink-0 text-lg">
+                  ⏳
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm text-white">7-Day Free Trial Active</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium">
+                      $0.00 Charged • Full Access
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed max-w-xl">
+                    Website Chatbot, Unipile Email Automation, and Pinecone Policy Vector DB are 100% active. After your 1-week trial ends, select a plan to maintain uninterrupted service.
+                  </p>
+                </div>
+              </div>
+
+              {/* Digital Countdown Timer Box */}
+              <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 bg-zinc-950/90 border border-indigo-500/40 rounded-xl px-3 py-2 font-mono shadow-inner">
+                  <div className="text-center px-1.5 min-w-[32px]">
+                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{trialCountdown.days}</span>
+                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Days</span>
+                  </div>
+                  <span className="text-indigo-400 font-bold text-sm">:</span>
+                  <div className="text-center px-1.5 min-w-[32px]">
+                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{String(trialCountdown.hours).padStart(2, '0')}</span>
+                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Hours</span>
+                  </div>
+                  <span className="text-indigo-400 font-bold text-sm">:</span>
+                  <div className="text-center px-1.5 min-w-[32px]">
+                    <span className="text-base sm:text-lg font-bold text-white block leading-none">{String(trialCountdown.minutes).padStart(2, '0')}</span>
+                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Mins</span>
+                  </div>
+                  <span className="text-indigo-400 font-bold text-sm">:</span>
+                  <div className="text-center px-1.5 min-w-[32px]">
+                    <span className="text-base sm:text-lg font-bold text-indigo-400 block leading-none">{String(trialCountdown.seconds).padStart(2, '0')}</span>
+                    <span className="text-[8px] text-zinc-400 uppercase tracking-wider block mt-1">Secs</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentSection('billing')}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-md shadow-indigo-600/30 cursor-pointer shrink-0"
+                >
+                  View Plans →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Global Trial Expired Banner */}
+          {isTrialExpired && !isPaid && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-rose-950/30 border border-rose-800/70 text-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xl">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-bold shrink-0">
+                  <IconLock className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-rose-200">7-Day Free Trial Has Ended</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/60 font-medium">
+                      Features Locked (Unpaid)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed max-w-xl">
+                    Your 1-week free trial has expired. AI Chatbot queries, Unipile email sync, and policy document uploads are locked. Upgrade to an active plan below to resume.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentSection('billing')}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition-all shadow-md shadow-rose-600/30 cursor-pointer shrink-0 self-start md:self-auto"
+              >
+                Choose a Plan to Unlock →
+              </button>
+            </div>
+          )}
           {/* =========================================================================
               VIEW 1: OVERVIEW (MODERN EXECUTIVE SUMMARY)
           ========================================================================= */}
@@ -1617,9 +1860,13 @@ export default function DashboardPage() {
                       <IconLock className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-semibold text-amber-200">Subscription Inactive — Payment Required</h3>
+                      <h3 className="text-xs font-semibold text-amber-200">
+                        {isTrialExpired ? '7-Day Free Trial Ended — Payment Required' : 'Subscription Inactive — Payment Required'}
+                      </h3>
                       <p className="text-[11px] text-amber-300/80 mt-0.5">
-                        Unipile email automation and custom chatbot embeddings are locked until payment is made. Select a plan to activate all features immediately.
+                        {isTrialExpired
+                          ? 'Your 1-week free trial has expired. Unipile email automation and custom chatbot embeddings are paused until payment is made.'
+                          : 'Unipile email automation and custom chatbot embeddings are locked until payment is made. Select a plan to activate all features immediately.'}
                       </p>
                     </div>
                   </div>
@@ -2024,6 +2271,28 @@ export default function DashboardPage() {
                         </div>
                       )}
 
+                      {!hasActiveSubscription && (
+                        <div className="p-3.5 rounded-lg bg-amber-950/25 border border-amber-800/60 text-xs text-amber-200 space-y-2">
+                          <div className="flex items-start gap-2.5">
+                            <IconLock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <div className="font-semibold text-amber-300">Feature Locked: Subscription Required</div>
+                              <p className="text-[11px] text-amber-200/80 mt-0.5 leading-relaxed">
+                                Uploading PDF documents and vectorizing them into Pinecone DB requires an active paid plan.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCurrentSection('billing')}
+                            className="w-full py-1.5 px-3 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <IconCreditCard className="w-3.5 h-3.5" />
+                            <span>Activate Plan in Billing & Plans →</span>
+                          </button>
+                        </div>
+                      )}
+
                       {!hasUserAiKey && (
                         <div className="p-3 rounded-md bg-amber-950/30 border border-amber-800/60 text-xs text-amber-200 flex items-center justify-between gap-2">
                           <span>⚠️ Add your Google Gemini API key in &ldquo;API Keys&rdquo; to enable Pinecone vectorization.</span>
@@ -2061,13 +2330,24 @@ export default function DashboardPage() {
                             Policy PDF File *
                           </label>
                           <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border border-dashed border-zinc-700/80 hover:border-zinc-500 rounded-lg p-5 text-center cursor-pointer bg-zinc-950/40 transition-colors"
+                            onClick={() => {
+                              if (!hasActiveSubscription) {
+                                toast.warning('Active subscription required to upload policy documents. Please upgrade in Billing & Plans.');
+                                return;
+                              }
+                              fileInputRef.current?.click();
+                            }}
+                            className={`border border-dashed rounded-lg p-5 text-center transition-colors ${
+                              !hasActiveSubscription
+                                ? 'border-zinc-800/80 bg-zinc-950/30 cursor-not-allowed opacity-75'
+                                : 'border-zinc-700/80 hover:border-zinc-500 cursor-pointer bg-zinc-950/40'
+                            }`}
                           >
                             <input
                               ref={fileInputRef}
                               type="file"
                               accept=".pdf,application/pdf"
+                              disabled={!hasActiveSubscription}
                               required
                               className="hidden"
                               onChange={(e) => {
@@ -2077,26 +2357,47 @@ export default function DashboardPage() {
                               }}
                             />
                             <div className="w-5 h-5 mx-auto mb-2 flex items-center justify-center text-zinc-500">
-                              <IconUploadCloud className="w-5 h-5" />
+                              {!hasActiveSubscription ? (
+                                <IconLock className="w-5 h-5 text-amber-400" />
+                              ) : (
+                                <IconUploadCloud className="w-5 h-5" />
+                              )}
                             </div>
                             <div className="text-xs text-zinc-300 font-medium truncate">
-                              {selectedFile ? selectedFile.name : 'Choose a PDF file'}
+                              {!hasActiveSubscription
+                                ? 'Upload disabled without active subscription'
+                                : selectedFile
+                                ? selectedFile.name
+                                : 'Choose a PDF file'}
                             </div>
                             <div className="text-[10px] font-mono text-zinc-500 mt-1">
-                              {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'PDF documents up to 25MB'}
+                              {!hasActiveSubscription
+                                ? 'Subscription required to vectorize documents'
+                                : selectedFile
+                                ? `${(selectedFile.size / 1024).toFixed(1)} KB`
+                                : 'PDF documents up to 25MB'}
                             </div>
                           </div>
                         </div>
 
                         <button
                           type="submit"
-                          disabled={policyUploading || !selectedFile}
-                          className="w-full py-2 px-3 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                          disabled={!hasActiveSubscription || policyUploading || !selectedFile}
+                          className={`w-full py-2.5 px-3 rounded-md font-medium text-xs transition-colors flex items-center justify-center gap-2 ${
+                            !hasActiveSubscription
+                              ? 'bg-zinc-900/90 text-zinc-500 border border-zinc-800/90 cursor-not-allowed opacity-60'
+                              : 'bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-50 cursor-pointer'
+                          }`}
                         >
                           {policyUploading ? (
                             <>
                               <div className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                               <span>Uploading to R2 & Pinecone...</span>
+                            </>
+                          ) : !hasActiveSubscription ? (
+                            <>
+                              <IconLock className="w-3.5 h-3.5 text-zinc-500" />
+                              <span>Upload Locked (Subscription Inactive)</span>
                             </>
                           ) : (
                             <>
@@ -2237,7 +2538,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <>
-                  {/* Subscription Paywall Warning Banner if not paid */}
+                  {/* Subscription Paywall Warning Banner if not paid / trial expired */}
                   {!hasActiveSubscription && (
                     <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                       <div className="flex items-start gap-3">
@@ -2245,9 +2546,15 @@ export default function DashboardPage() {
                           <IconLock className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="font-semibold text-amber-200">Subscription Required for Website Chatbot & Embeds</h4>
+                          <h4 className="font-semibold text-amber-200">
+                            {isTrialExpired
+                              ? '7-Day Free Trial Expired — Chatbot Locked'
+                              : 'Subscription Required for Website Chatbot & Embeds'}
+                          </h4>
                           <p className="text-zinc-300 mt-0.5 leading-relaxed">
-                            Generating Chatbot client API keys, testing policy Q&A, and embedding the chatbot widget on external websites require an active subscription plan.
+                            {isTrialExpired
+                              ? 'Your 1-week free trial has ended. Chatbot queries and embed widgets are paused until a subscription is activated.'
+                              : 'Generating Chatbot client API keys, testing policy Q&A, and embedding the chatbot widget on external websites require an active subscription plan.'}
                           </p>
                         </div>
                       </div>
@@ -2721,7 +3028,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Subscription Paywall Banner if unpaid */}
+              {/* Subscription Paywall Banner if unpaid / trial expired */}
               {!hasActiveSubscription && (
                 <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                   <div className="flex items-start gap-3">
@@ -2729,9 +3036,15 @@ export default function DashboardPage() {
                       <IconLock className="w-4 h-4" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-amber-200">Subscription Required for Unipile Email Automation</h3>
+                      <h3 className="font-semibold text-amber-200">
+                        {isTrialExpired
+                          ? '7-Day Free Trial Expired — Email Automation Locked'
+                          : 'Subscription Required for Unipile Email Automation'}
+                      </h3>
                       <p className="text-zinc-300 mt-0.5 leading-relaxed">
-                        Inbound webhook dispatching, automated replies, and AI rule evaluation are locked. Subscribe to an active plan to start processing emails.
+                        {isTrialExpired
+                          ? 'Your 1-week free trial has ended. Inbound webhook dispatching and automated email replies are paused until an active plan is purchased.'
+                          : 'Inbound webhook dispatching, automated replies, and AI rule evaluation are locked. Subscribe to an active plan to start processing emails.'}
                       </p>
                     </div>
                   </div>
@@ -3768,15 +4081,25 @@ Example:
                     <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
                       Billing, Plans & Invoices
                     </h1>
-                    {hasActiveSubscription ? (
+                    {!isBillingLoaded ? (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700/60 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                        Checking Status...
+                      </span>
+                    ) : isPaid ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/80 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        Active Subscription ({billingStatus?.subscription?.plan_name || 'Paid'})
+                        Active Subscription ({billingStatus?.subscription?.plan_name || 'Paid Plan'})
+                      </span>
+                    ) : isTrialActive ? (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-700/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                        7-Day Free Trial ({trialCountdown.days}d {String(trialCountdown.hours).padStart(2, '0')}h {String(trialCountdown.minutes).padStart(2, '0')}m Remaining)
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/80 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        Unpaid — Features Locked
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950/60 text-rose-400 border border-rose-800/80 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                        Trial Expired — Features Locked
                       </span>
                     )}
                   </div>
@@ -3785,7 +4108,23 @@ Example:
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => handleAdjustTrial('reset')}
+                    disabled={checkoutLoading === 'trial_reset'}
+                    className="px-2.5 py-1.5 rounded-lg border border-indigo-800/80 bg-indigo-950/30 hover:bg-indigo-900/40 text-indigo-300 text-xs font-mono transition-colors cursor-pointer"
+                    title="Reset 7-day trial to test active state"
+                  >
+                    {checkoutLoading === 'trial_reset' ? 'Updating...' : '⚡ Test Trial (7 Days)'}
+                  </button>
+                  <button
+                    onClick={() => handleAdjustTrial('expire')}
+                    disabled={checkoutLoading === 'trial_expire'}
+                    className="px-2.5 py-1.5 rounded-lg border border-amber-800/80 bg-amber-950/30 hover:bg-amber-900/40 text-amber-300 text-xs font-mono transition-colors cursor-pointer"
+                    title="Simulate Day 8 to test expired locked state"
+                  >
+                    {checkoutLoading === 'trial_expire' ? 'Updating...' : '⚡ Test Trial (Expired)'}
+                  </button>
                   <button
                     onClick={() => { if (token) loadBillingData(token); }}
                     className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -3812,34 +4151,62 @@ Example:
                 <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Plan</span>
                   <div className="text-lg font-bold text-zinc-100 truncate">
-                    {billingStatus?.subscription?.plan_name || 'Unpaid (Free Tier)'}
+                    {!isBillingLoaded ? (
+                      <span className="text-zinc-500 animate-pulse">Checking Plan...</span>
+                    ) : isPaid ? (
+                      billingStatus?.subscription?.plan_name || 'Active Paid Plan'
+                    ) : isTrialActive ? (
+                      '7-Day Free Trial'
+                    ) : (
+                      'Trial Expired (Unpaid)'
+                    )}
                   </div>
                   <div className="text-[11px] font-mono text-zinc-400">
-                    {hasActiveSubscription
-                      ? `$${((billingStatus?.subscription?.amount || 0) / 100).toFixed(2)} / ${billingStatus?.subscription?.interval || 'month'}`
-                      : '$0.00 / month'}
+                    {!isBillingLoaded ? (
+                      'Syncing with database...'
+                    ) : isPaid ? (
+                      `$${((billingStatus?.subscription?.amount || 0) / 100).toFixed(2)} / ${billingStatus?.subscription?.interval || 'month'}`
+                    ) : isTrialActive ? (
+                      '$0.00 (1-Week Free Trial)'
+                    ) : (
+                      '$0.00 / month (locked)'
+                    )}
                   </div>
                 </div>
 
                 {/* Card 2: Next Payment Due */}
                 <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Payment Due / Renewal</span>
-                  <div className="text-base font-semibold text-zinc-100 truncate">
-                    {billingStatus?.subscription?.current_period_end
-                      ? new Date(billingStatus.subscription.current_period_end).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })
-                      : 'Immediate'}
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                    {!isBillingLoaded ? 'Trial Countdown' : isPaid ? 'Payment Due / Renewal' : 'Trial Countdown'}
+                  </span>
+                  <div className="text-base font-semibold text-zinc-100 truncate font-mono">
+                    {!isBillingLoaded ? (
+                      <span className="text-zinc-500 animate-pulse">Calculating...</span>
+                    ) : isPaid && billingStatus?.subscription?.current_period_end ? (
+                      new Date(billingStatus.subscription.current_period_end).toLocaleDateString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })
+                    ) : isTrialActive ? (
+                      `${trialCountdown.days}d ${String(trialCountdown.hours).padStart(2, '0')}h ${String(trialCountdown.minutes).padStart(2, '0')}m left`
+                    ) : (
+                      'Immediate'
+                    )}
                   </div>
                   <div className="text-[11px] font-mono">
-                    {isPastDue ? (
+                    {!isBillingLoaded ? (
+                      <span className="text-zinc-500">Retrieving countdown...</span>
+                    ) : isPastDue ? (
                       <span className="text-rose-400">⚠️ Payment overdue</span>
-                    ) : hasActiveSubscription ? (
+                    ) : isPaid ? (
                       <span className="text-emerald-400">Auto-renews via Stripe</span>
+                    ) : isTrialActive ? (
+                      <span className="text-indigo-300">
+                        Ends {trialEndsAt ? new Date(trialEndsAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'in 7 days'}
+                      </span>
                     ) : (
-                      <span className="text-amber-400">Select a plan below</span>
+                      <span className="text-rose-400">Trial ended • Pay below</span>
                     )}
                   </div>
                 </div>
@@ -3848,11 +4215,20 @@ Example:
                 <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1.5">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Automation Gating</span>
                   <div className="text-base font-semibold text-zinc-100 truncate flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${hasActiveSubscription ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                    <span>{hasActiveSubscription ? 'Unlocked & Active' : 'Locked (Unpaid)'}</span>
+                    {!isBillingLoaded ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-zinc-500 animate-pulse" />
+                        <span className="text-zinc-400">Loading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`w-2 h-2 rounded-full ${hasActiveSubscription ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                        <span>{isPaid ? 'Unlocked (Paid Plan)' : isTrialActive ? 'Unlocked (7-Day Trial)' : 'Locked (Trial Expired)'}</span>
+                      </>
+                    )}
                   </div>
                   <div className="text-[11px] font-mono text-zinc-400">
-                    {hasActiveSubscription ? 'Unipile + Chatbot active' : 'Payment required to add'}
+                    {!isBillingLoaded ? 'Checking access...' : hasActiveSubscription ? 'Unipile + Chatbot active' : 'Chatbot & email stopped'}
                   </div>
                 </div>
 
@@ -3937,7 +4313,7 @@ Example:
                         },
                       ]
                   ).map((plan: any) => {
-                    const isCurrentPlan = billingStatus?.subscription?.plan_id === plan.id && hasActiveSubscription;
+                    const isCurrentPlan = isPaid && billingStatus?.subscription?.plan_id === plan.id;
                     return (
                       <div
                         key={plan.id}
@@ -3986,7 +4362,7 @@ Example:
                           </div>
                         </div>
 
-                        <div className="pt-6 space-y-2">
+                        <div className="pt-6">
                           <button
                             type="button"
                             onClick={() => handleSubscribePlan(plan.id)}
@@ -4006,16 +4382,6 @@ Example:
                                 : `Pay $${plan.price} with Stripe`}
                             </span>
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleQuickTestPayment(plan.id)}
-                            disabled={checkoutLoading === `test_${plan.id}`}
-                            className="w-full py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-mono transition-colors cursor-pointer"
-                            title="Instantly unlocks features in database test mode"
-                          >
-                            {checkoutLoading === `test_${plan.id}` ? 'Activating...' : '⚡ Instant Test Activate'}
-                          </button>
                         </div>
                       </div>
                     );
@@ -4034,9 +4400,20 @@ Example:
                       All historical Stripe transactions, invoices, and payment receipts.
                     </p>
                   </div>
-                  <span className="text-xs font-mono text-zinc-500">
-                    {paymentHistory.length} transaction{paymentHistory.length === 1 ? '' : 's'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {paymentHistory.length > 0 && (
+                      <button
+                        onClick={handleClearPayments}
+                        className="px-2.5 py-1 rounded text-[11px] font-mono text-rose-400 hover:text-rose-200 bg-rose-950/40 hover:bg-rose-950/80 border border-rose-900/60 transition-colors cursor-pointer"
+                        title="Delete all payments and empty table"
+                      >
+                        Empty Table
+                      </button>
+                    )}
+                    <span className="text-xs font-mono text-zinc-500">
+                      {paymentHistory.length} transaction{paymentHistory.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
                 </div>
 
                 {paymentHistory.length === 0 ? (
@@ -4046,7 +4423,7 @@ Example:
                     </div>
                     <div className="text-xs font-medium text-zinc-300">No Payment History Yet</div>
                     <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                      Whenever you pay for a plan via Stripe Checkout, the transaction confirmation and invoice PDF will appear here.
+                      You are currently on the 7-day free trial ($0.00 charged). Whenever you subscribe to a paid plan via Stripe Checkout, the verified transaction receipt and PDF invoice will appear here.
                     </p>
                   </div>
                 ) : (

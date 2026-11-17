@@ -43,3 +43,12 @@ input:disabled,
 .cursor-not-allowed {
   cursor: not-allowed !important;
 }
+
+@keyframes toastProgress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}

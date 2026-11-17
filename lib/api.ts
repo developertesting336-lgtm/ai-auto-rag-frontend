@@ -152,6 +152,11 @@ export interface PaymentItem {
 export interface BillingStatusResponse {
   success: boolean;
   hasActiveSubscription: boolean;
+  isTrialActive?: boolean;
+  isTrialExpired?: boolean;
+  isPaid?: boolean;
+  trialDaysRemaining?: number;
+  trialEndsAt?: string | null;
   status: string;
   subscription?: UserSubscription | null;
   paymentDue?: string | null;
@@ -624,7 +629,7 @@ export async function getCompanyPolicies(
 export async function deleteCompanyPolicy(
   id: string,
   token: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     const res = await fetch(`${API_BASE}/api/companies/policies/${id}`, {
       method: 'DELETE',
@@ -846,6 +851,48 @@ export async function simulatePaymentSuccess(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ planId }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Developer helper: adjust trial between Active 7-day trial and Expired trial
+ */
+export async function adjustTrialPeriod(
+  action: 'reset' | 'expire',
+  token: string
+): Promise<{ success: boolean; message?: string; error?: string; [key: string]: any }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/adjust-trial`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+/**
+ * Permanently empty payments history table
+ */
+export async function clearPaymentHistory(
+  token: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/billing/clear-payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
     });
     return await res.json();
   } catch (err: any) {
