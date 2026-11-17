@@ -1287,6 +1287,7 @@ export default function DashboardPage() {
       if (res.success) {
         toast.success(`AI model "${modelToDelete.name}" deleted.`);
         setAiModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
+        loadHealthData(undefined, true);
         setModelToDelete(null);
       } else {
         toast.error(res.error || 'Failed to delete AI model.');
@@ -4030,53 +4031,6 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* MODAL: Delete AI Model Confirmation */}
-              {modelToDelete && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-rose-950/60 border border-rose-800/80 flex items-center justify-center text-rose-400 shrink-0">
-                        <IconTrash className="w-5 h-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-semibold text-zinc-100">
-                          Delete AI Model
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed">
-                          Are you sure you want to delete <span className="font-semibold text-zinc-200">&ldquo;{modelToDelete.name}&rdquo;</span>? This will permanently remove its stored API credentials.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
-                      <button
-                        type="button"
-                        onClick={() => setModelToDelete(null)}
-                        disabled={deletingModel}
-                        className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deletingModel}
-                        onClick={handleConfirmDeleteAiModel}
-                        className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {deletingModel ? (
-                          <>
-                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            <span>Deleting...</span>
-                          </>
-                        ) : (
-                          <span>Delete Model</span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* MODAL: Delete Campaign Confirmation */}
               {campaignToDelete && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -4695,6 +4649,53 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     </form>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL: Delete AI Model Confirmation */}
+              {modelToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-rose-950/60 border border-rose-800/80 flex items-center justify-center text-rose-400 shrink-0">
+                        <IconTrash className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Delete AI Model
+                        </h3>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          Are you sure you want to delete <span className="font-semibold text-zinc-200">&ldquo;{modelToDelete.name}&rdquo;</span>? This will permanently remove its stored API credentials.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => setModelToDelete(null)}
+                        disabled={deletingModel}
+                        className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingModel}
+                        onClick={handleConfirmDeleteAiModel}
+                        className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {deletingModel ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Deleting...</span>
+                          </>
+                        ) : (
+                          <span>Delete Model</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
