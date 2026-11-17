@@ -73,6 +73,62 @@ export interface ChatbotApiKeyItem {
   updated_at: string;
 }
 
+export interface AiModelItem {
+  id: string;
+  user_id: string;
+  name: string;
+  provider: string;
+  model_name: string;
+  key_hint: string;
+  base_url?: string;
+  temperature?: string | number;
+  max_tokens?: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface EmailCampaignItem {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  webhook_token: string;
+  webhook_url: string;
+  unipile_key_hint?: string;
+  unipile_account_id?: string;
+  unipile_dsn?: string;
+  ai_model_id?: string;
+  ai_model_name?: string;
+  ai_provider?: string;
+  ai_prompt: string;
+  status: string; // 'active', 'paused'
+  total_received: number;
+  total_replied: number;
+  created_at: string;
+  updated_at: string;
+  logs?: CampaignEmailLogItem[];
+}
+
+export interface CampaignEmailLogItem {
+  id: string;
+  campaign_id: string;
+  user_id?: string;
+  message_id?: string;
+  account_id?: string;
+  from_email?: string;
+  from_name?: string;
+  to_email?: string;
+  subject?: string;
+  snippet?: string;
+  body?: string;
+  reply_status: string;
+  ai_generated_reply?: string;
+  ai_model_used?: string;
+  error_message?: string;
+  created_at: string;
+}
+
 export interface UnipileSettings {
   id?: string;
   provider: string;
@@ -893,6 +949,246 @@ export async function clearPaymentHistory(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+// =========================================================================
+// AI MODELS API CLIENT
+// =========================================================================
+
+export async function fetchAiModels(
+  token: string
+): Promise<{ success: boolean; models?: AiModelItem[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai-models`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function createAiModel(
+  token: string,
+  payload: {
+    name: string;
+    provider: string;
+    model_name: string;
+    api_key: string;
+    base_url?: string;
+    temperature?: number;
+    max_tokens?: number;
+  }
+): Promise<{ success: boolean; message?: string; model?: AiModelItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai-models`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function updateAiModel(
+  token: string,
+  id: string,
+  payload: Partial<AiModelItem> & { api_key?: string }
+): Promise<{ success: boolean; message?: string; model?: AiModelItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai-models/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function deleteAiModel(
+  token: string,
+  id: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai-models/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function testAiModel(
+  token: string,
+  id: string,
+  prompt?: string
+): Promise<{ success: boolean; message?: string; reply?: string; durationMs?: number; tokens?: number; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai-models/${id}/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ prompt }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+// =========================================================================
+// EMAIL CAMPAIGNS API CLIENT (UNIPILE WEBHOOK & PROMPT AUTOMATION)
+// =========================================================================
+
+export async function fetchCampaigns(
+  token: string
+): Promise<{ success: boolean; campaigns?: EmailCampaignItem[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function createCampaign(
+  token: string,
+  payload: {
+    name: string;
+    description?: string;
+    unipile_api_key?: string;
+    unipile_account_id?: string;
+    unipile_dsn?: string;
+    ai_model_id?: string;
+    ai_prompt: string;
+    status?: string;
+  }
+): Promise<{ success: boolean; message?: string; campaign?: EmailCampaignItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function fetchCampaignById(
+  token: string,
+  id: string
+): Promise<{ success: boolean; campaign?: EmailCampaignItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function updateCampaign(
+  token: string,
+  id: string,
+  payload: Partial<EmailCampaignItem> & { unipile_api_key?: string }
+): Promise<{ success: boolean; message?: string; campaign?: EmailCampaignItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function deleteCampaign(
+  token: string,
+  id: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function simulateCampaignTrigger(
+  token: string,
+  id: string,
+  payload: {
+    from_email?: string;
+    from_name?: string;
+    subject?: string;
+    body?: string;
+  }
+): Promise<{
+  success: boolean;
+  message?: string;
+  reply?: string;
+  durationMs?: number;
+  modelUsed?: string;
+  log?: CampaignEmailLogItem;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns/${id}/simulate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Connection error' };
+  }
+}
+
+export async function fetchCampaignLogs(
+  token: string,
+  id: string
+): Promise<{ success: boolean; logs?: CampaignEmailLogItem[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/campaigns/${id}/logs`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
     return await res.json();
   } catch (err: any) {
