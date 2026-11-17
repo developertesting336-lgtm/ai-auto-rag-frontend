@@ -587,12 +587,16 @@ export default function DashboardPage() {
   const [savingAiModel, setSavingAiModel] = useState(false);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
   const [modelTestResult, setModelTestResult] = useState<{ id: string; reply?: string; durationMs?: number; error?: string } | null>(null);
+  const [modelToDelete, setModelToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingModel, setDeletingModel] = useState(false);
 
   // Email Campaigns state (Unipile Webhook & Prompt Automation)
   const [campaigns, setCampaigns] = useState<EmailCampaignItem[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<EmailCampaignItem | null>(null);
+  const [campaignToDelete, setCampaignToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingCampaign, setDeletingCampaign] = useState(false);
   const [campaignForm, setCampaignForm] = useState({
     name: '',
     description: '',
@@ -1006,15 +1010,22 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteAiModel = async (id: string, name: string) => {
-    if (!token) return;
-    if (!confirm(`Delete AI model "${name}"?`)) return;
-    const res = await deleteAiModel(token, id);
-    if (res.success) {
-      toast.success('AI Model deleted.');
-      setAiModels((prev) => prev.filter((m) => m.id !== id));
-    } else {
-      toast.error(res.error || 'Failed to delete AI model.');
+  const handleConfirmDeleteAiModel = async () => {
+    if (!token || !modelToDelete) return;
+    setDeletingModel(true);
+    try {
+      const res = await deleteAiModel(token, modelToDelete.id);
+      if (res.success) {
+        toast.success(`AI model "${modelToDelete.name}" deleted.`);
+        setAiModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
+        setModelToDelete(null);
+      } else {
+        toast.error(res.error || 'Failed to delete AI model.');
+      }
+    } catch (err: any) {
+      toast.error('Error deleting AI model.');
+    } finally {
+      setDeletingModel(false);
     }
   };
 
@@ -1076,15 +1087,22 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteCampaign = async (id: string, name: string) => {
-    if (!token) return;
-    if (!confirm(`Delete email campaign "${name}"? This will delete all webhook settings and email logs for this campaign.`)) return;
-    const res = await deleteCampaign(token, id);
-    if (res.success) {
-      toast.success('Campaign deleted successfully.');
-      setCampaigns((prev) => prev.filter((c) => c.id !== id));
-    } else {
-      toast.error(res.error || 'Failed to delete campaign.');
+  const handleConfirmDeleteCampaign = async () => {
+    if (!token || !campaignToDelete) return;
+    setDeletingCampaign(true);
+    try {
+      const res = await deleteCampaign(token, campaignToDelete.id);
+      if (res.success) {
+        toast.success(`Campaign "${campaignToDelete.name}" deleted.`);
+        setCampaigns((prev) => prev.filter((c) => c.id !== campaignToDelete.id));
+        setCampaignToDelete(null);
+      } else {
+        toast.error(res.error || 'Failed to delete campaign.');
+      }
+    } catch (err: any) {
+      toast.error('Error deleting campaign.');
+    } finally {
+      setDeletingCampaign(false);
     }
   };
 
@@ -2993,7 +3011,7 @@ export default function DashboardPage() {
                                 <button
                                   onClick={() => {
                                     navigator.clipboard.writeText(k.api_key);
-                                    alert(`Copied key for "${k.name}"`);
+                                    toast.success(`Copied key for "${k.name}"`);
                                   }}
                                   className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
                                 >
@@ -3401,7 +3419,7 @@ export default function DashboardPage() {
 
                           <button
                             type="button"
-                            onClick={() => handleDeleteCampaign(camp.id, camp.name)}
+                            onClick={() => setCampaignToDelete({ id: camp.id, name: camp.name })}
                             className="p-1.5 rounded-lg hover:bg-rose-950/40 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
                             title="Delete campaign"
                           >
@@ -3696,6 +3714,100 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     </form>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL: Delete AI Model Confirmation */}
+              {modelToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-rose-950/60 border border-rose-800/80 flex items-center justify-center text-rose-400 shrink-0">
+                        <IconTrash className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Delete AI Model
+                        </h3>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          Are you sure you want to delete <span className="font-semibold text-zinc-200">&ldquo;{modelToDelete.name}&rdquo;</span>? This will permanently remove its stored API credentials.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => setModelToDelete(null)}
+                        disabled={deletingModel}
+                        className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingModel}
+                        onClick={handleConfirmDeleteAiModel}
+                        className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {deletingModel ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Deleting...</span>
+                          </>
+                        ) : (
+                          <span>Delete Model</span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL: Delete Campaign Confirmation */}
+              {campaignToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-rose-950/60 border border-rose-800/80 flex items-center justify-center text-rose-400 shrink-0">
+                        <IconTrash className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-zinc-100">
+                          Delete Email Campaign
+                        </h3>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          Are you sure you want to delete <span className="font-semibold text-zinc-200">&ldquo;{campaignToDelete.name}&rdquo;</span>? This will permanently delete its webhook routing and all associated inbound email logs.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => setCampaignToDelete(null)}
+                        disabled={deletingCampaign}
+                        className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingCampaign}
+                        onClick={handleConfirmDeleteCampaign}
+                        className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {deletingCampaign ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Deleting...</span>
+                          </>
+                        ) : (
+                          <span>Delete Campaign</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4127,7 +4239,7 @@ export default function DashboardPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteAiModel(model.id, model.name)}
+                            onClick={() => setModelToDelete({ id: model.id, name: model.name })}
                             className="p-1.5 rounded-lg hover:bg-rose-950/40 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
                             title="Delete AI model"
                           >
