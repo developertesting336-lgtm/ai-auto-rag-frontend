@@ -580,11 +580,9 @@ export default function DashboardPage() {
   const [aiModelForm, setAiModelForm] = useState({
     name: '',
     provider: 'gemini',
-    model_name: 'gemini-2.0-flash',
     api_key: '',
     base_url: '',
     temperature: 0.7,
-    max_tokens: 2048,
   });
   const [savingAiModel, setSavingAiModel] = useState(false);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
@@ -994,11 +992,9 @@ export default function DashboardPage() {
           setAiModelForm({
             name: '',
             provider: 'gemini',
-            model_name: 'gemini-2.0-flash',
             api_key: '',
             base_url: '',
             temperature: 0.7,
-            max_tokens: 2048,
           });
           loadAiModelsData(token);
         } else {
@@ -2381,7 +2377,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between text-zinc-400">
                       <span className="text-zinc-500">Default Model</span>
                       <span className="text-emerald-400">
-                        {aiModels[0]?.model_name || 'gemini-2.0-flash'}
+                        {aiModels[0]?.name || 'Gemini 2.0 Flash'}
                       </span>
                     </div>
                   </div>
@@ -3719,7 +3715,7 @@ export default function DashboardPage() {
                           <option value="">Default Gemini 2.0 Flash</option>
                           {aiModels.map((m) => (
                             <option key={m.id} value={m.id}>
-                              {m.name} ({m.provider} - {m.model_name})
+                              {m.name} ({m.provider.toUpperCase()})
                             </option>
                           ))}
                         </select>
@@ -4082,7 +4078,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Connect your AI models (Google Gemini, OpenAI, Claude, Groq, DeepSeek). Select them dynamically in your Unipile Email Campaigns and Chatbots.
+                    Universal AI Model Support: Connect any AI model or provider (Google Gemini, OpenAI, Claude, Groq, DeepSeek, Mistral, OpenRouter, or Custom API). Select them dynamically in your Unipile Email Campaigns and Chatbots.
                   </p>
                 </div>
 
@@ -4102,11 +4098,9 @@ export default function DashboardPage() {
                       setAiModelForm({
                         name: '',
                         provider: 'gemini',
-                        model_name: 'gemini-2.0-flash',
                         api_key: '',
                         base_url: '',
                         temperature: 0.7,
-                        max_tokens: 2048,
                       });
                       setShowAiModelModal(true);
                     }}
@@ -4128,8 +4122,8 @@ export default function DashboardPage() {
 
                 <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Supported Providers</span>
-                  <div className="text-sm font-bold text-indigo-300 mt-1">Gemini • OpenAI • Claude • Groq • DeepSeek</div>
-                  <div className="text-[11px] font-mono text-zinc-500">Ready for campaigns & chatbots</div>
+                  <div className="text-sm font-bold text-indigo-300 mt-1">Any AI Model • Gemini • OpenAI • Claude • Groq • DeepSeek</div>
+                  <div className="text-[11px] font-mono text-zinc-500">Universal support for any AI model & custom APIs</div>
                 </div>
 
                 <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-1">
@@ -4163,13 +4157,11 @@ export default function DashboardPage() {
                     onClick={() => {
                       setEditingAiModel(null);
                       setAiModelForm({
-                        name: 'My Gemini Flash Model',
+                        name: '',
                         provider: 'gemini',
-                        model_name: 'gemini-2.0-flash',
                         api_key: '',
                         base_url: '',
                         temperature: 0.7,
-                        max_tokens: 2048,
                       });
                       setShowAiModelModal(true);
                     }}
@@ -4209,7 +4201,9 @@ export default function DashboardPage() {
 
                         <div>
                           <div className="text-sm font-semibold text-zinc-100 truncate">{model.name}</div>
-                          <div className="text-xs font-mono text-indigo-400 mt-0.5 truncate">{model.model_name}</div>
+                          <div className="text-xs font-mono text-zinc-400 mt-0.5 truncate">
+                            Provider: <span className="text-indigo-400 uppercase font-semibold">{model.provider}</span>
+                          </div>
                         </div>
 
                         {/* Specs Box */}
@@ -4220,11 +4214,14 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-zinc-500">Temperature:</span>
-                            <span className="text-zinc-300">{model.temperature || 0.7}</span>
+                            <span className="text-zinc-300">{model.temperature ?? 0.7}</span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-zinc-500">Max Tokens:</span>
-                            <span className="text-zinc-300">{model.max_tokens || 2048}</span>
+                            <span className="text-zinc-500">Status:</span>
+                            <span className="text-emerald-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span>Active</span>
+                            </span>
                           </div>
                         </div>
 
@@ -4277,11 +4274,9 @@ export default function DashboardPage() {
                               setAiModelForm({
                                 name: model.name,
                                 provider: model.provider,
-                                model_name: model.model_name,
                                 api_key: '',
                                 base_url: model.base_url || '',
                                 temperature: Number(model.temperature) || 0.7,
-                                max_tokens: model.max_tokens || 2048,
                               });
                               setShowAiModelModal(true);
                             }}
@@ -4341,88 +4336,26 @@ export default function DashboardPage() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
-                            Provider *
-                          </label>
-                          <select
-                            value={aiModelForm.provider}
-                            onChange={(e) => {
-                              const prov = e.target.value;
-                              let defaultModel = 'gemini-2.0-flash';
-                              if (prov === 'openai') defaultModel = 'gpt-4o-mini';
-                              if (prov === 'anthropic') defaultModel = 'claude-3-5-sonnet-20241022';
-                              if (prov === 'groq') defaultModel = 'llama-3.3-70b-versatile';
-                              if (prov === 'deepseek') defaultModel = 'deepseek-chat';
-                              setAiModelForm({ ...aiModelForm, provider: prov, model_name: defaultModel });
-                            }}
-                            className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                          >
-                            <option value="gemini">Google Gemini</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="anthropic">Anthropic Claude</option>
-                            <option value="groq">Groq</option>
-                            <option value="deepseek">DeepSeek</option>
-                            <option value="custom">Custom / Other</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
-                            Model Identifier *
-                          </label>
-                          {aiModelForm.provider === 'gemini' ? (
-                            <select
-                              value={aiModelForm.model_name}
-                              onChange={(e) => setAiModelForm({ ...aiModelForm, model_name: e.target.value })}
-                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                            >
-                              <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended)</option>
-                              <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                            </select>
-                          ) : aiModelForm.provider === 'openai' ? (
-                            <select
-                              value={aiModelForm.model_name}
-                              onChange={(e) => setAiModelForm({ ...aiModelForm, model_name: e.target.value })}
-                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                            >
-                              <option value="gpt-4o-mini">gpt-4o-mini (Fast & Efficient)</option>
-                              <option value="gpt-4o">gpt-4o (High Intelligence)</option>
-                              <option value="gpt-4-turbo">gpt-4-turbo</option>
-                              <option value="o3-mini">o3-mini</option>
-                            </select>
-                          ) : aiModelForm.provider === 'anthropic' ? (
-                            <select
-                              value={aiModelForm.model_name}
-                              onChange={(e) => setAiModelForm({ ...aiModelForm, model_name: e.target.value })}
-                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                            >
-                              <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
-                              <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
-                            </select>
-                          ) : aiModelForm.provider === 'groq' ? (
-                            <select
-                              value={aiModelForm.model_name}
-                              onChange={(e) => setAiModelForm({ ...aiModelForm, model_name: e.target.value })}
-                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                            >
-                              <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
-                              <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
-                              <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. deepseek-chat or custom-model"
-                              value={aiModelForm.model_name}
-                              onChange={(e) => setAiModelForm({ ...aiModelForm, model_name: e.target.value })}
-                              className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                            />
-                          )}
-                        </div>
+                      <div>
+                        <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
+                          Provider *
+                        </label>
+                        <select
+                          value={aiModelForm.provider}
+                          onChange={(e) => {
+                            setAiModelForm({ ...aiModelForm, provider: e.target.value });
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
+                        >
+                          <option value="gemini">Google Gemini</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="anthropic">Anthropic Claude</option>
+                          <option value="groq">Groq</option>
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="mistral">Mistral AI</option>
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="custom">Custom / Any OpenAI-Compatible API</option>
+                        </select>
                       </div>
 
                       <div>
@@ -4442,14 +4375,14 @@ export default function DashboardPage() {
                         />
                       </div>
 
-                      {aiModelForm.provider === 'custom' && (
+                      {(aiModelForm.provider === 'custom' || aiModelForm.provider === 'openrouter') && (
                         <div>
                           <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
-                            Custom Base URL
+                            Custom Base URL (Optional)
                           </label>
                           <input
                             type="text"
-                            placeholder="https://api.yourcustomendpoint.com/v1"
+                            placeholder="https://api.yourprovider.com/v1 (e.g. OpenRouter, Ollama, Together AI, vLLM)"
                             value={aiModelForm.base_url}
                             onChange={(e) => setAiModelForm({ ...aiModelForm, base_url: e.target.value })}
                             className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
@@ -4457,35 +4390,26 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-mono uppercase text-[10px] text-zinc-400">
                             Temperature: {aiModelForm.temperature}
                           </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={aiModelForm.temperature}
-                            onChange={(e) => setAiModelForm({ ...aiModelForm, temperature: parseFloat(e.target.value) })}
-                            className="w-full accent-indigo-500"
-                          />
+                          <span className="text-[10px] font-mono text-zinc-500">Creativity & Determinism</span>
                         </div>
-
-                        <div>
-                          <label className="block font-mono uppercase text-[10px] text-zinc-400 mb-1">
-                            Max Output Tokens
-                          </label>
-                          <input
-                            type="number"
-                            min="256"
-                            max="8192"
-                            step="256"
-                            value={aiModelForm.max_tokens}
-                            onChange={(e) => setAiModelForm({ ...aiModelForm, max_tokens: parseInt(e.target.value) || 2048 })}
-                            className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono text-xs focus:border-indigo-500 focus:outline-none"
-                          />
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={aiModelForm.temperature}
+                          onChange={(e) => setAiModelForm({ ...aiModelForm, temperature: parseFloat(e.target.value) })}
+                          className="w-full accent-indigo-500 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[10px] font-mono text-zinc-500 mt-0.5">
+                          <span>0.0 (Strict / Factual)</span>
+                          <span>0.7 (Balanced)</span>
+                          <span>1.0 (Creative)</span>
                         </div>
                       </div>
 

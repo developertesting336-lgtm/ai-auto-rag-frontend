@@ -1001,7 +1001,7 @@ export async function createAiModel(
   payload: {
     name: string;
     provider: string;
-    model_name: string;
+    model_name?: string;
     api_key: string;
     base_url?: string;
     temperature?: number;
