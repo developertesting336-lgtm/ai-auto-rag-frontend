@@ -618,6 +618,7 @@ export default function DashboardPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [isCreatingNewCompany, setIsCreatingNewCompany] = useState(false);
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
+  const [chatbotCompanyDropdownOpen, setChatbotCompanyDropdownOpen] = useState(false);
   const [policies, setPolicies] = useState<CompanyPolicy[]>([]);
   const [pineconeConfigured, setPineconeConfigured] = useState(false);
   const [companyLoading, setCompanyLoading] = useState(false);
@@ -3118,26 +3119,101 @@ export default function DashboardPage() {
 
                 {/* Company Switcher Controls */}
                 <div className="flex items-center gap-2 shrink-0 self-start md:self-auto">
-                  <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
-                    <IconBuilding className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                    <span className="text-zinc-500 font-mono text-[11px]">Chatbot For:</span>
-                    {companiesList.length > 0 ? (
-                      <select
-                        value={company?.id || ''}
-                        onChange={(e) => {
-                          const target = companiesList.find((c) => c.id === e.target.value);
-                          if (target) handleSelectCompany(target);
-                        }}
-                        className="bg-transparent text-zinc-100 font-semibold focus:outline-none cursor-pointer text-xs"
-                      >
-                        {companiesList.map((c) => (
-                          <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-zinc-500 font-medium">None</span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setChatbotCompanyDropdownOpen(!chatbotCompanyDropdownOpen)}
+                      className="h-9 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800/90 border border-zinc-800 hover:border-zinc-700 text-xs text-zinc-200 font-medium flex items-center gap-2.5 transition-all cursor-pointer shadow-sm"
+                      title="Switch Active Company Chatbot"
+                    >
+                      <div className="w-5 h-5 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-[11px] shrink-0">
+                        {company ? company.name.charAt(0).toUpperCase() : <IconBuilding className="w-3 h-3 text-zinc-400" />}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-zinc-500 font-mono text-[11px]">Chatbot For:</span>
+                        <span className="font-semibold text-zinc-100 max-w-[140px] sm:max-w-[190px] truncate">
+                          {company ? company.name : 'Select Company'}
+                        </span>
+                      </div>
+                      <IconChevronDown
+                        className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 shrink-0 ${
+                          chatbotCompanyDropdownOpen ? 'rotate-180 text-zinc-200' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {chatbotCompanyDropdownOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setChatbotCompanyDropdownOpen(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-zinc-950/95 backdrop-blur-md border border-zinc-800 shadow-2xl z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+                          <div className="px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-zinc-500 border-b border-zinc-900 pb-2">
+                            <span>Switch Company Chatbot</span>
+                            <span className="text-zinc-600">{companiesList.length} total</span>
+                          </div>
+
+                          <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
+                            {companiesList.map((comp) => {
+                              const isSelected = company?.id === comp.id;
+                              return (
+                                <button
+                                  key={comp.id}
+                                  type="button"
+                                  onClick={() => {
+                                    handleSelectCompany(comp);
+                                    setChatbotCompanyDropdownOpen(false);
+                                  }}
+                                  className={`w-full px-2.5 py-2 rounded-xl text-left text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-zinc-800/90 text-white border border-zinc-700/60 shadow-sm'
+                                      : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 border border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                    <div
+                                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                                        isSelected
+                                          ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40'
+                                          : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                                      }`}
+                                    >
+                                      {comp.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className={`font-semibold truncate ${isSelected ? 'text-zinc-100' : 'text-zinc-300'}`}>
+                                        {comp.name}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-zinc-500 truncate">
+                                        {comp.industry || comp.website || 'No industry set'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {isSelected && (
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="pt-1.5 border-t border-zinc-900">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatbotCompanyDropdownOpen(false);
+                                handleStartCreateCompany();
+                                setCurrentSection('company');
+                              }}
+                              className="w-full px-2.5 py-2 rounded-xl text-left text-xs font-medium text-emerald-400 hover:bg-emerald-950/40 border border-emerald-900/30 hover:border-emerald-700/50 flex items-center gap-2 transition-all cursor-pointer"
+                            >
+                              <IconPlus className="w-3.5 h-3.5" />
+                              <span>Create New Company Profile</span>
+                            </button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                   <button
@@ -3547,23 +3623,7 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* REST API Call Example */}
-                      <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                          Direct REST API Endpoint
-                        </span>
-                        <p className="text-xs text-zinc-400">
-                          Query {company.name}&apos;s chatbot programmatically from any frontend, backend, or mobile app:
-                        </p>
-                        <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-[11px] text-zinc-400 space-y-1">
-                          <div><span className="text-emerald-400">POST</span> {API_BASE}/api/chatbot/query</div>
-                          <div><span className="text-zinc-500">Header:</span> x-api-key: {selectedEmbedKey || company.api_key || 'af_live_...'}</div>
-                          <div><span className="text-zinc-500">Body:</span> &#123; &quot;message&quot;: &quot;What is {company.name}&apos;s policy on refunds?&quot; &#125;</div>
-                        </div>
-                        <p className="text-[10px] font-mono text-zinc-600 pt-1">
-                          Pinecone retrieves embeddings strictly from namespace: company-{company.id.slice(0, 8)}...
-                        </p>
-                      </div>
+
                     </div>
 
                     {/* Right Column: Live Interactive Chatbot Tester */}
