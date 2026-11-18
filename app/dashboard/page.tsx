@@ -649,6 +649,9 @@ export default function DashboardPage() {
     },
   ]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatbotKeyToDelete, setChatbotKeyToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingChatbotKey, setDeletingChatbotKey] = useState(false);
+  const [showRegenKeyModal, setShowRegenKeyModal] = useState(false);
 
   // AI Models state (Multi-Provider: Gemini, OpenAI, Claude, Groq, DeepSeek)
   const [aiModels, setAiModels] = useState<AiModelItem[]>([]);
@@ -834,9 +837,9 @@ export default function DashboardPage() {
     return () => clearInterval(timerId);
   }, [trialEndsAt]);
 
-  // Derived user API key status (Strictly requiring user-provided key)
-  const hasGeminiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini');
-  const hasUserAiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini' || k.provider?.toLowerCase() === 'openai');
+  // Derived user API key status (Accepts either AI Models hub or legacy API keys)
+  const hasGeminiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini') || aiModels.some((m) => m.provider?.toLowerCase() === 'gemini');
+  const hasUserAiKey = apiKeys.some((k) => k.provider?.toLowerCase() === 'gemini' || k.provider?.toLowerCase() === 'openai') || aiModels.length > 0;
   const isUnipileConnected = Boolean(unipileSettings?.is_active && (unipileSettings?.api_key_masked || unipileSettings?.account_id || inboundEmails.length > 0));
   const filteredInboundEmails = inboundEmails.filter((mail) => {
     if (!emailSearchQuery.trim()) return true;
@@ -1622,9 +1625,13 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRegenerateCompanyKey = async () => {
+  const handleRegenerateCompanyKey = () => {
     if (!token || !company) return;
-    if (!confirm(`Regenerate API key for ${company.name}? Any live website widgets will need the new key.`)) return;
+    setShowRegenKeyModal(true);
+  };
+
+  const handleConfirmRegenerateKey = async () => {
+    if (!token || !company) return;
     setRegeneratingKey(true);
     try {
       const res = await regenerateCompanyApiKey(token, company.id);
@@ -1633,7 +1640,13 @@ export default function DashboardPage() {
         setCompany(updated);
         setCompaniesList((prev) => prev.map((c) => (c.id === company.id ? updated : c)));
         setSelectedEmbedKey(res.api_key);
+        toast.success(`Primary API key for ${company.name} regenerated!`);
+        setShowRegenKeyModal(false);
+      } else {
+        toast.error(res.error || 'Failed to rotate key.');
       }
+    } catch (err: any) {
+      toast.error('Error rotating key.');
     } finally {
       setRegeneratingKey(false);
     }
@@ -1647,15 +1660,15 @@ export default function DashboardPage() {
     setChatbotKeyFeedback(null);
     try {
       const res = await createChatbotKey(
-        { name: newChatbotKeyName.trim() || `${company.name} Chatbot Key`, company_id: company.id },
+        { name: newChatbotKeyName.trim() || `${company.name} Website Key`, company_id: company.id },
         token
       );
       if (res.success && res.key) {
         setChatbotKeys((prev) => [res.key!, ...prev]);
         setSelectedEmbedKey(res.key.api_key);
         setNewChatbotKeyName('');
-        toast.success(`Chatbot API key "${res.key.name}" generated!`);
-        setChatbotKeyFeedback({ text: `Key "${res.key.name}" generated! You can copy it below for your website.` });
+        toast.success(`Chatbot API key "${res.key.name}" generated for ${company.name}!`);
+        setChatbotKeyFeedback({ text: `Key "${res.key.name}" generated for ${company.name}! You can copy it below for your website.` });
       } else {
         toast.error(res.error || 'Failed to generate key.');
         setChatbotKeyFeedback({ text: res.error || 'Failed to generate key.', error: true });
@@ -1665,23 +1678,29 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDeleteChatbotKey = async (keyId: string) => {
-    if (!token) return;
-    if (!confirm('Revoke this Chatbot API key? Any website widget using this key will stop responding.')) return;
+  const handleDeleteChatbotKey = (keyId: string, keyName: string) => {
+    setChatbotKeyToDelete({ id: keyId, name: keyName });
+  };
 
+  const handleConfirmDeleteChatbotKey = async () => {
+    if (!token || !chatbotKeyToDelete) return;
+    setDeletingChatbotKey(true);
     try {
-      const res = await deleteChatbotKey(keyId, token);
+      const res = await deleteChatbotKey(chatbotKeyToDelete.id, token);
       if (res.success) {
-        setChatbotKeys((prev) => prev.filter((k) => k.id !== keyId));
-        if (selectedEmbedKey === keyId) {
+        setChatbotKeys((prev) => prev.filter((k) => k.id !== chatbotKeyToDelete.id));
+        if (selectedEmbedKey === chatbotKeyToDelete.id) {
           setSelectedEmbedKey(company?.api_key || '');
         }
-        toast.success('Chatbot key revoked successfully.');
+        toast.success(`Chatbot key "${chatbotKeyToDelete.name}" revoked.`);
+        setChatbotKeyToDelete(null);
       } else {
         toast.error(res.error || 'Failed to revoke key.');
       }
     } catch (err: any) {
       toast.error('Error revoking chatbot key.');
+    } finally {
+      setDeletingChatbotKey(false);
     }
   };
 
@@ -1705,7 +1724,7 @@ export default function DashboardPage() {
         ...prev,
         {
           role: 'assistant',
-          text: '⚠️ Google Gemini API key required: Please provide your Gemini API key in the "API Keys" tab before testing or querying this chatbot.',
+          text: '⚠️ AI Model required: Please add an active AI Model (Gemini 3.1 Flash Lite, OpenAI, etc.) in the "AI Models" tab before testing or querying this chatbot.',
         },
       ]);
       return;
@@ -3076,39 +3095,63 @@ export default function DashboardPage() {
           )}
 
           {/* =========================================================================
-              VIEW: WEBSITE CHATBOT (R2 & PINECONE EMBEDDABLE CHATBOT INTEGRATION)
+              VIEW: WEBSITE CHATBOT (COMPANY-ASSOCIATED PINECONE RAG INTEGRATION)
           ========================================================================= */}
           {currentSection === 'chatbot' && (
             <div className="space-y-6">
-              {/* Header */}
-              <div className="pb-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {/* Header Bar with Company Association & Quick Switcher */}
+              <div className="pb-4 border-b border-zinc-800 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
-                  <h2 className="text-base font-semibold text-zinc-100">
-                    Website Chatbot & Embed Integration
-                  </h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Deploy an AI chatbot on your website that answers customer questions using your company policies from Pinecone DB.
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-semibold text-zinc-100">
+                      Website Chatbot &amp; Embed Integration
+                    </h2>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-950/60 text-indigo-400 border border-indigo-800/60 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                      Company-Scoped Knowledge Base
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Deploy a branded AI chatbot on your website that answers customer questions using {company ? <span className="text-zinc-200 font-semibold">{company.name}</span> : 'your company'}&apos;s verified policy documents from Pinecone DB.
                   </p>
                 </div>
-                {companiesList.length > 1 && (
-                  <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs shrink-0 self-start sm:self-auto">
-                    <span className="text-zinc-500 font-mono text-[11px]">Chatbot:</span>
-                    <select
-                      value={company?.id || ''}
-                      onChange={(e) => {
-                        const target = companiesList.find((c) => c.id === e.target.value);
-                        if (target) handleSelectCompany(target);
-                      }}
-                      className="bg-transparent text-zinc-200 font-medium focus:outline-none cursor-pointer"
-                    >
-                      {companiesList.map((c) => (
-                        <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+
+                {/* Company Switcher Controls */}
+                <div className="flex items-center gap-2 shrink-0 self-start md:self-auto">
+                  <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
+                    <IconBuilding className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span className="text-zinc-500 font-mono text-[11px]">Chatbot For:</span>
+                    {companiesList.length > 0 ? (
+                      <select
+                        value={company?.id || ''}
+                        onChange={(e) => {
+                          const target = companiesList.find((c) => c.id === e.target.value);
+                          if (target) handleSelectCompany(target);
+                        }}
+                        className="bg-transparent text-zinc-100 font-semibold focus:outline-none cursor-pointer text-xs"
+                      >
+                        {companiesList.map((c) => (
+                          <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-zinc-500 font-medium">None</span>
+                    )}
                   </div>
-                )}
+                  <button
+                    onClick={() => {
+                      handleStartCreateCompany();
+                      setCurrentSection('company');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shrink-0 border border-zinc-700/60"
+                    title="Create New Company Profile"
+                  >
+                    <IconPlus className="w-3.5 h-3.5" />
+                    <span>New Company</span>
+                  </button>
+                </div>
               </div>
 
               {!company ? (
@@ -3118,17 +3161,107 @@ export default function DashboardPage() {
                   </div>
                   <h3 className="text-sm font-semibold text-zinc-200">Company Profile Required</h3>
                   <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    Please create your company profile first before generating website chatbot credentials.
+                    Please create your company profile first before generating website chatbot credentials or testing policy retrieval.
                   </p>
                   <button
                     onClick={() => setCurrentSection('company')}
-                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 font-medium text-xs hover:bg-white"
+                    className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 font-medium text-xs hover:bg-white transition-colors"
                   >
-                    Set Up Company
+                    Set Up Company Profile
                   </button>
                 </div>
               ) : (
                 <>
+                  {/* Top Company Association & Pinecone Knowledge Base Hero Card */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-zinc-900 via-zinc-900/70 to-zinc-950 border border-zinc-800 shadow-lg relative overflow-hidden">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
+                      {/* Company Identity */}
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-lg shrink-0 shadow-inner">
+                          {company.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <h3 className="text-base font-bold text-zinc-100">{company.name}</h3>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Chatbot Connected
+                            </span>
+                            {company.industry && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                                {company.industry}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-zinc-400 max-w-xl">
+                            {company.description || `Customer questions submitted to this chatbot query ${company.name}'s dedicated Pinecone vector knowledge base with zero cross-company data leakage.`}
+                          </p>
+                          <div className="flex items-center gap-3 pt-1 text-[11px] font-mono text-zinc-500 flex-wrap">
+                            <span className="text-zinc-400">
+                              Pinecone Namespace: <span className="text-indigo-400">company-{company.id.slice(0, 8)}...</span>
+                            </span>
+                            <span>•</span>
+                            <span className="text-zinc-400">
+                              AI Engine: <span className="text-zinc-300">Gemini 3.1 Flash Lite</span>
+                            </span>
+                            {company.website && (
+                              <>
+                                <span>•</span>
+                                <a
+                                  href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-zinc-400 hover:text-zinc-200 underline"
+                                >
+                                  {company.website.replace(/^https?:\/\//, '')}
+                                </a>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Knowledge Base Status & Quick Action */}
+                      <div className="flex items-center gap-3 lg:border-l lg:border-zinc-800/80 lg:pl-6 shrink-0">
+                        <div className="text-right hidden sm:block">
+                          <div className="text-xs font-semibold text-zinc-200">
+                            {policies.length} {policies.length === 1 ? 'Policy Document' : 'Policy Documents'}
+                          </div>
+                          <div className="text-[10px] font-mono text-zinc-500">
+                            {policies.length > 0 ? 'Pinecone RAG Active' : 'No Policies Uploaded'}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setCurrentSection('company')}
+                          className="px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors flex items-center gap-1.5 border border-zinc-700/80 cursor-pointer shadow-sm"
+                        >
+                          <IconFileText className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{policies.length === 0 ? 'Upload Company Policies' : 'Manage Company Policies'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Feature Verification Bar */}
+                    <div className="mt-4 pt-3 border-t border-zinc-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono text-zinc-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400">✓</span>
+                        <span>Isolated Vector Namespace</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400">✓</span>
+                        <span>AES-256 Key Encryption</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400">✓</span>
+                        <span>Gemini 3.1 Flash Lite</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400">✓</span>
+                        <span>Company-Branded Embed</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Subscription Paywall Warning Banner if not paid / trial expired */}
                   {!hasActiveSubscription && (
                     <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
@@ -3158,7 +3291,7 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {/* Google Gemini API Key Warning Banner if missing */}
+                  {/* AI Model Key Warning Banner if missing */}
                   {!hasUserAiKey && (
                     <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                       <div className="flex items-start gap-3">
@@ -3166,20 +3299,17 @@ export default function DashboardPage() {
                           <IconKey className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="font-semibold text-amber-200">Google Gemini API Key Required Before Implementation</h4>
+                          <h4 className="font-semibold text-amber-200">AI Model Provider Required for {company.name} Chatbot</h4>
                           <p className="text-zinc-300 mt-0.5 leading-relaxed">
-                            You must provide your Google Gemini API key before you can generate chatbot keys, test responses, or implement the chatbot embed script on your website.
+                            You must configure an active AI Model (Google Gemini, OpenAI, Claude, etc.) in the &ldquo;AI Models&rdquo; tab before you can generate chatbot keys, test responses, or implement the chatbot embed on your website.
                           </p>
                         </div>
                       </div>
                       <button
-                        onClick={() => {
-                          setKeyProvider('gemini');
-                          setCurrentSection('apikeys');
-                        }}
+                        onClick={() => setCurrentSection('models')}
                         className="px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors shrink-0 cursor-pointer self-start sm:self-auto"
                       >
-                        Provide Gemini Key Now →
+                        Add AI Model Now →
                       </button>
                     </div>
                   )}
@@ -3190,10 +3320,11 @@ export default function DashboardPage() {
                       {/* Alert Feedback */}
                       {chatbotKeyFeedback && (
                         <div
-                          className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${chatbotKeyFeedback.error
+                          className={`p-3 rounded-lg text-xs font-mono flex items-center justify-between ${
+                            chatbotKeyFeedback.error
                               ? 'bg-rose-950/40 border border-rose-900/80 text-rose-300'
                               : 'bg-emerald-950/40 border border-emerald-900/80 text-emerald-300'
-                            }`}
+                          }`}
                         >
                           <span>{chatbotKeyFeedback.text}</span>
                           <button onClick={() => setChatbotKeyFeedback(null)} className="hover:text-white">✕</button>
@@ -3204,12 +3335,12 @@ export default function DashboardPage() {
                       <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                            Generate Chatbot API Key
+                            Generate API Key for {company.name}
                           </span>
-                          <span className="text-[10px] font-mono text-emerald-400">Website Integration</span>
+                          <span className="text-[10px] font-mono text-emerald-400">Company Scoped</span>
                         </div>
                         <p className="text-xs text-zinc-400 leading-relaxed">
-                          Generate unique API keys to embed your company AI chatbot on external websites, customer portals, or landing pages.
+                          Generate authentication keys strictly bound to <span className="text-zinc-200 font-medium">{company.name}</span>. Queries using these keys will only access {company.name}&apos;s policy documents in Pinecone.
                         </p>
 
                         <form onSubmit={handleCreateChatbotKey} className="flex gap-2 pt-1">
@@ -3217,7 +3348,7 @@ export default function DashboardPage() {
                             type="text"
                             required
                             disabled={!hasUserAiKey || !hasActiveSubscription}
-                            placeholder={!hasActiveSubscription ? "Subscription required to generate chatbot keys" : hasUserAiKey ? "Key label e.g. Production Website" : "Configure Gemini key in API Keys tab first"}
+                            placeholder={!hasActiveSubscription ? "Subscription required to generate chatbot keys" : hasUserAiKey ? `Key label e.g. ${company.name} Main Website, Support Desk...` : "Configure AI Model in Models tab first"}
                             value={newChatbotKeyName}
                             onChange={(e) => setNewChatbotKeyName(e.target.value)}
                             className="flex-1 px-3 py-2 rounded-md bg-zinc-950 border border-zinc-800 focus:border-zinc-600 focus:outline-none text-zinc-100 placeholder:text-zinc-600 font-sans text-xs disabled:opacity-50"
@@ -3228,7 +3359,7 @@ export default function DashboardPage() {
                             className="px-4 py-2 rounded-md bg-zinc-100 text-zinc-950 hover:bg-white font-medium text-xs transition-colors disabled:opacity-50 shrink-0 flex items-center gap-1.5 cursor-pointer"
                           >
                             <IconPlus className="w-3.5 h-3.5" />
-                            <span>{creatingChatbotKey ? 'Generating...' : '+ Generate Key'}</span>
+                            <span>{creatingChatbotKey ? 'Generating...' : `+ Generate Key`}</span>
                           </button>
                         </form>
                       </div>
@@ -3237,7 +3368,7 @@ export default function DashboardPage() {
                       <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                            Active Chatbot Keys ({1 + chatbotKeys.length})
+                            Active Chatbot Keys for {company.name} ({1 + chatbotKeys.length})
                           </span>
                           <span className="text-[10px] font-mono text-zinc-500">Live Auth</span>
                         </div>
@@ -3246,24 +3377,28 @@ export default function DashboardPage() {
                           {/* Primary Company Default Key */}
                           {company.api_key && (
                             <div
-                              className={`p-3 rounded-lg border text-xs transition-all ${selectedEmbedKey === company.api_key
+                              className={`p-3 rounded-lg border text-xs transition-all ${
+                                selectedEmbedKey === company.api_key
                                   ? 'bg-zinc-900 border-zinc-600'
                                   : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
-                                }`}
+                              }`}
                             >
                               <div className="flex items-center justify-between mb-1.5">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium text-zinc-200">Default Primary Key</span>
+                                  <span className="font-medium text-zinc-200">{company.name} Default Primary Key</span>
                                   <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">
                                     Default
+                                  </span>
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-800/60">
+                                    {company.name}
                                   </span>
                                 </div>
                                 <button
                                   onClick={handleRegenerateCompanyKey}
                                   disabled={regeneratingKey}
-                                  className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 underline"
+                                  className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 underline cursor-pointer"
                                 >
-                                  {regeneratingKey ? 'Rotating...' : 'Rotate'}
+                                  Rotate Key
                                 </button>
                               </div>
                               <div className="flex items-center gap-2 font-mono text-[11px]">
@@ -3276,17 +3411,18 @@ export default function DashboardPage() {
                                     setCopiedCompanyKey(true);
                                     setTimeout(() => setCopiedCompanyKey(false), 2000);
                                   }}
-                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
                                 >
                                   {copiedCompanyKey ? <IconCheck className="text-emerald-400" /> : <IconCopy />}
                                   <span>{copiedCompanyKey ? 'Copied' : 'Copy'}</span>
                                 </button>
                                 <button
                                   onClick={() => setSelectedEmbedKey(company.api_key!)}
-                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${selectedEmbedKey === company.api_key
+                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 cursor-pointer ${
+                                    selectedEmbedKey === company.api_key
                                       ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
                                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
-                                    }`}
+                                  }`}
                                 >
                                   {selectedEmbedKey === company.api_key ? 'Selected' : 'Use in Embed'}
                                 </button>
@@ -3298,21 +3434,25 @@ export default function DashboardPage() {
                           {chatbotKeys.map((k) => (
                             <div
                               key={k.id}
-                              className={`p-3 rounded-lg border text-xs transition-all ${selectedEmbedKey === k.api_key
+                              className={`p-3 rounded-lg border text-xs transition-all ${
+                                selectedEmbedKey === k.api_key
                                   ? 'bg-zinc-900 border-zinc-600'
                                   : 'bg-zinc-950/70 border-zinc-800 hover:border-zinc-700'
-                                }`}
+                              }`}
                             >
                               <div className="flex items-center justify-between mb-1.5">
                                 <div className="flex items-center gap-2 truncate">
                                   <span className="font-medium text-zinc-200 truncate">{k.name}</span>
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-800/60 shrink-0">
+                                    {company.name}
+                                  </span>
                                   <span className="text-[9px] font-mono text-zinc-500 shrink-0">
                                     {new Date(k.created_at).toLocaleDateString()}
                                   </span>
                                 </div>
                                 <button
-                                  onClick={() => handleDeleteChatbotKey(k.id)}
-                                  className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors"
+                                  onClick={() => handleDeleteChatbotKey(k.id, k.name)}
+                                  className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
                                 >
                                   Revoke
                                 </button>
@@ -3326,17 +3466,18 @@ export default function DashboardPage() {
                                     navigator.clipboard.writeText(k.api_key);
                                     toast.success(`Copied key for "${k.name}"`);
                                   }}
-                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1"
+                                  className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
                                 >
                                   <IconCopy />
                                   <span>Copy</span>
                                 </button>
                                 <button
                                   onClick={() => setSelectedEmbedKey(k.api_key)}
-                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 ${selectedEmbedKey === k.api_key
+                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors shrink-0 cursor-pointer ${
+                                    selectedEmbedKey === k.api_key
                                       ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/60'
                                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'
-                                    }`}
+                                  }`}
                                 >
                                   {selectedEmbedKey === k.api_key ? 'Selected' : 'Use in Embed'}
                                 </button>
@@ -3350,50 +3491,49 @@ export default function DashboardPage() {
                       <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
-                            1-Line HTML Embed Code
+                            1-Line HTML Embed Code for {company.name}
                           </span>
                           {hasUserAiKey ? (
-                            <span className="text-[10px] font-mono text-indigo-400">Plug & Play</span>
+                            <span className="text-[10px] font-mono text-indigo-400">Plug &amp; Play</span>
                           ) : (
                             <span className="text-[10px] font-mono text-amber-400 font-semibold">🔒 Key Required</span>
                           )}
                         </div>
                         <p className="text-xs text-zinc-400 leading-relaxed">
-                          Paste this single tag right before the closing &lt;/body&gt; tag of your website. A floating AI chat bubble will immediately appear.
+                          Paste this single tag right before the closing &lt;/body&gt; tag of your website. A floating AI chat bubble branded for <span className="text-zinc-200 font-medium">{company.name}</span> will appear.
                         </p>
 
                         {!hasUserAiKey ? (
                           <div className="p-4 rounded-lg bg-zinc-950 border border-amber-900/60 space-y-3">
                             <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
                               <span className="text-amber-400">⚠️</span>
-                              <span>Google Gemini API Key Required Before Script Implementation</span>
+                              <span>AI Model Required Before Script Implementation</span>
                             </div>
                             <p className="text-zinc-400 text-xs leading-relaxed">
-                              Please provide your Google Gemini API key in the &ldquo;API Keys&rdquo; tab before you can implement or embed this chatbot script. The script requires your authenticated API key to query Pinecone and generate AI responses.
+                              Please configure an active AI Model in the &ldquo;AI Models&rdquo; tab before you can implement or embed this chatbot script. The script requires an active model to query Pinecone and generate AI responses.
                             </p>
                             <button
-                              onClick={() => {
-                                setKeyProvider('gemini');
-                                setCurrentSection('apikeys');
-                              }}
+                              onClick={() => setCurrentSection('models')}
                               className="w-full py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
                             >
                               <IconKey className="w-3.5 h-3.5" />
-                              <span>Add Google Gemini Key to Unlock Script</span>
+                              <span>Add AI Model in Models Tab to Unlock</span>
                             </button>
                           </div>
                         ) : (
                           <div className="relative bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-xs">
                             <pre className="text-zinc-300 text-[11px] whitespace-pre-wrap break-all selection:bg-zinc-800">
-                              {`<script
+{`<!-- ${company.name} AI Chatbot Integration -->
+<script
   src="${API_BASE}/embed/chatbot.js"
   data-api-key="${selectedEmbedKey || company.api_key || 'YOUR_API_KEY'}"
+  data-company="${company.name}"
 ></script>`}
                             </pre>
                             <button
                               onClick={() => {
                                 const activeKey = selectedEmbedKey || company.api_key || 'YOUR_API_KEY';
-                                const code = `<script src="${API_BASE}/embed/chatbot.js" data-api-key="${activeKey}"></script>`;
+                                const code = `<!-- ${company.name} AI Chatbot Integration -->\n<script src="${API_BASE}/embed/chatbot.js" data-api-key="${activeKey}" data-company="${company.name}"></script>`;
                                 navigator.clipboard.writeText(code);
                                 setCopiedEmbedScript(true);
                                 setTimeout(() => setCopiedEmbedScript(false), 2000);
@@ -3413,13 +3553,16 @@ export default function DashboardPage() {
                           Direct REST API Endpoint
                         </span>
                         <p className="text-xs text-zinc-400">
-                          Query the chatbot programmatically from any frontend, backend, or mobile app:
+                          Query {company.name}&apos;s chatbot programmatically from any frontend, backend, or mobile app:
                         </p>
                         <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800 font-mono text-[11px] text-zinc-400 space-y-1">
                           <div><span className="text-emerald-400">POST</span> {API_BASE}/api/chatbot/query</div>
                           <div><span className="text-zinc-500">Header:</span> x-api-key: {selectedEmbedKey || company.api_key || 'af_live_...'}</div>
-                          <div><span className="text-zinc-500">Body:</span> &#123; &quot;message&quot;: &quot;What is your return policy?&quot; &#125;</div>
+                          <div><span className="text-zinc-500">Body:</span> &#123; &quot;message&quot;: &quot;What is {company.name}&apos;s policy on refunds?&quot; &#125;</div>
                         </div>
+                        <p className="text-[10px] font-mono text-zinc-600 pt-1">
+                          Pinecone retrieves embeddings strictly from namespace: company-{company.id.slice(0, 8)}...
+                        </p>
                       </div>
                     </div>
 
@@ -3428,38 +3571,36 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
                         <div className="min-w-0 pr-2">
                           <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-xs shrink-0">
+                              {company.name.charAt(0).toUpperCase()}
+                            </div>
                             <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">
-                              Live Chatbot Tester
+                              {company.name} AI Assistant
                             </h3>
                           </div>
-                          {companiesList.length > 1 ? (
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[11px] text-zinc-500 font-mono">Chatbot:</span>
-                              <select
-                                value={company.id}
-                                onChange={(e) => {
-                                  const found = companiesList.find((c) => c.id === e.target.value);
-                                  if (found) handleSelectCompany(found);
-                                }}
-                                className="bg-zinc-950 border border-zinc-700 rounded px-2 py-0.5 text-xs text-zinc-200 font-medium focus:outline-none cursor-pointer"
-                              >
-                                {companiesList.map((c) => (
-                                  <option key={c.id} value={c.id} className="bg-zinc-900 text-zinc-200">
-                                    {c.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
-                              Testing Pinecone vector retrieval for {company.name}
-                            </p>
-                          )}
+                          <p className="text-[11px] text-zinc-500 mt-0.5 truncate font-mono">
+                            Isolated Pinecone RAG • {company.name}
+                          </p>
                         </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60 shrink-0">
-                          {policies.length} Policies
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/60">
+                            {policies.length} Policies
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Notice if company has 0 policies */}
+                      {policies.length === 0 && (
+                        <div className="mt-3 p-2.5 rounded-lg bg-amber-950/30 border border-amber-800/50 text-[11px] text-amber-300/90 flex items-center justify-between gap-2">
+                          <span>⚠️ No policy documents uploaded for {company.name} yet.</span>
+                          <button
+                            onClick={() => setCurrentSection('company')}
+                            className="text-amber-200 underline font-medium hover:text-white shrink-0 cursor-pointer"
+                          >
+                            Upload Policies →
+                          </button>
+                        </div>
+                      )}
 
                       {/* Chat Messages Log */}
                       <div className="flex-1 overflow-y-auto py-3 space-y-3 font-sans text-xs">
@@ -3469,10 +3610,11 @@ export default function DashboardPage() {
                             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                           >
                             <div
-                              className={`max-w-[85%] rounded-lg p-3 leading-relaxed ${msg.role === 'user'
+                              className={`max-w-[85%] rounded-lg p-3 leading-relaxed ${
+                                msg.role === 'user'
                                   ? 'bg-zinc-800 text-zinc-100'
                                   : 'bg-zinc-950 border border-zinc-800 text-zinc-300'
-                                }`}
+                              }`}
                             >
                               <p className="whitespace-pre-wrap">{msg.text}</p>
                               {msg.sources && msg.sources.length > 0 && (
@@ -3496,7 +3638,7 @@ export default function DashboardPage() {
                           <div className="flex justify-start">
                             <div className="bg-zinc-950 border border-zinc-800 text-zinc-500 rounded-lg p-3 text-xs flex items-center gap-2">
                               <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
-                              <span>Reading Pinecone embeddings & formulating answer...</span>
+                              <span>Reading {company.name} Pinecone vectors &amp; generating answer...</span>
                             </div>
                           </div>
                         )}
@@ -3506,7 +3648,7 @@ export default function DashboardPage() {
                       <form onSubmit={handleSendChatMessage} className="pt-3 border-t border-zinc-800 flex items-center gap-2">
                         <input
                           type="text"
-                          placeholder={hasUserAiKey ? "Ask about company policies, rules, security..." : "Provide Google Gemini API key in 'API Keys' tab to chat..."}
+                          placeholder={hasUserAiKey ? `Ask about ${company.name}'s policies, rules, security, hours...` : "Configure AI Model in 'AI Models' tab to test chatbot..."}
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
                           disabled={chatLoading || !hasUserAiKey}
@@ -3522,10 +3664,105 @@ export default function DashboardPage() {
                       </form>
                     </div>
                   </div>
+
+                  {/* MODAL: Revoke Chatbot Key Confirmation */}
+                  {chatbotKeyToDelete && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                      <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-full bg-rose-950/60 border border-rose-800/80 flex items-center justify-center text-rose-400 shrink-0">
+                            <IconTrash className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-semibold text-zinc-100">
+                              Revoke Chatbot Key
+                            </h3>
+                            <p className="text-xs text-zinc-400 leading-relaxed">
+                              Are you sure you want to revoke the key <span className="font-semibold text-zinc-200">&ldquo;{chatbotKeyToDelete.name}&rdquo;</span> for <span className="font-semibold text-zinc-200">{company.name}</span>? Any website widget or client using this key will immediately stop responding.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                          <button
+                            type="button"
+                            onClick={() => setChatbotKeyToDelete(null)}
+                            disabled={deletingChatbotKey}
+                            className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingChatbotKey}
+                            onClick={handleConfirmDeleteChatbotKey}
+                            className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            {deletingChatbotKey ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Revoking...</span>
+                              </>
+                            ) : (
+                              <span>Revoke Key</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODAL: Rotate Primary Key Confirmation */}
+                  {showRegenKeyModal && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                      <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-full bg-amber-950/60 border border-amber-800/80 flex items-center justify-center text-amber-400 shrink-0">
+                            <IconRefresh className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-semibold text-zinc-100">
+                              Rotate Primary API Key
+                            </h3>
+                            <p className="text-xs text-zinc-400 leading-relaxed">
+                              Are you sure you want to rotate the primary key for <span className="font-semibold text-zinc-200">{company.name}</span>? Any live website widgets or embeds using this default key will stop working until you update their script tag.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+                          <button
+                            type="button"
+                            onClick={() => setShowRegenKeyModal(false)}
+                            disabled={regeneratingKey}
+                            className="px-4 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={regeneratingKey}
+                            onClick={handleConfirmRegenerateKey}
+                            className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            {regeneratingKey ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Rotating...</span>
+                              </>
+                            ) : (
+                              <span>Rotate Primary Key</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           )}
+
 
           {/* =========================================================================
               VIEW 3: EMAIL CAMPAIGNS (UNIPILE WEBHOOK & AI AUTOMATION)
